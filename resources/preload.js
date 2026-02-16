@@ -441,6 +441,10 @@ window.ztools = {
     getPlugins: async () => await electron.ipcRenderer.invoke('internal:get-plugins'),
     getAllPlugins: async () => await electron.ipcRenderer.invoke('internal:get-all-plugins'),
     importPlugin: async () => await electron.ipcRenderer.invoke('internal:import-plugin'),
+    readPluginInfoFromZip: async (zipPath) =>
+      await electron.ipcRenderer.invoke('internal:read-plugin-info-from-zip', zipPath),
+    installPluginFromPath: async (zipPath) =>
+      await electron.ipcRenderer.invoke('internal:install-plugin-from-path', zipPath),
     importDevPlugin: async (pluginPath) =>
       await electron.ipcRenderer.invoke('internal:import-dev-plugin', pluginPath),
     deletePlugin: async (pluginPath) =>
@@ -465,6 +469,8 @@ window.ztools = {
       await electron.ipcRenderer.invoke('internal:get-plugin-data-stats'),
     clearPluginData: async (pluginName) =>
       await electron.ipcRenderer.invoke('internal:clear-plugin-data', pluginName),
+    packagePlugin: async (pluginPath) =>
+      await electron.ipcRenderer.invoke('internal:package-plugin', pluginPath),
 
     // ==================== 全局快捷键 API ====================
     registerGlobalShortcut: async (shortcut, target) =>
