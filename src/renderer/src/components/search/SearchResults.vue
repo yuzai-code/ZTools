@@ -52,7 +52,7 @@
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, toRaw, watch } from 'vue'
 import { useMainPushResults, type MainPushGroup, type MainPushItem } from '../../composables/useMainPushResults'
 import { useNavigation } from '../../composables/useNavigation'
 import { useSearchResults } from '../../composables/useSearchResults'
@@ -622,16 +622,21 @@ async function handleMainPushSelectAction(group: MainPushGroup, item: MainPushIt
   try {
     const shouldEnter = await handleMainPushSelect(group, item, props.searchQuery)
     if (shouldEnter) {
+      // 构建原始 item（剔除内部展示字段）
+      const rawItem = JSON.parse(JSON.stringify(toRaw(item)))
+      delete rawItem._resolvedIcon
       // 进入插件
       await window.ztools.launch({
         path: group.pluginPath,
         type: 'plugin',
         featureCode: group.featureCode,
-        name: group.pluginName,
+        name: group.featureExplain || group.pluginName,
         cmdType: group.matchedCmdType,
         param: {
           payload: props.searchQuery,
-          type: group.matchedCmdType
+          type: group.matchedCmdType,
+          from: 'main',
+          option: rawItem
         }
       })
     }
@@ -647,11 +652,12 @@ async function handleEnterMainPushApp(group: MainPushGroup): Promise<void> {
       path: group.pluginPath,
       type: 'plugin',
       featureCode: group.featureCode,
-      name: group.pluginName,
+      name: group.featureExplain || group.pluginName,
       cmdType: group.matchedCmdType,
       param: {
         payload: props.searchQuery,
-        type: group.matchedCmdType
+        type: group.matchedCmdType,
+        from: 'main'
       }
     })
   } catch (error) {
