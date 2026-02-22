@@ -1,6 +1,7 @@
 import { IpcMainInvokeEvent, ipcMain } from 'electron'
 import logCollector from '../../core/logCollector.js'
 import detachedWindowManager from '../../core/detachedWindowManager.js'
+import floatingBallManager from '../../core/floatingBallManager.js'
 import superPanelManager from '../../core/superPanelManager.js'
 import aiModelsAPI from '../renderer/aiModels.js'
 import commandsAPI from '../renderer/commands.js'
@@ -491,6 +492,8 @@ export class InternalPluginAPI {
         }
         // 广播到主渲染进程
         this.mainWindow?.webContents.send('update-floating-ball-double-click-command', command)
+        // 同步更新 floatingBallManager 的双击命令，使其立即生效
+        await floatingBallManager.setDoubleClickCommand(command)
         return { success: true }
       }
     )

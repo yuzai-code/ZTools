@@ -1773,6 +1773,8 @@ async function saveSettings(): Promise<void> {
       searchMode: searchMode.value,
       tabTargetCommand: tabTargetCommand.value,
       floatingBallDoubleClickCommand: floatingBallDoubleClickCommand.value,
+      floatingBallEnabled: floatingBallEnabled.value,
+      floatingBallLetter: floatingBallLetter.value,
       superPanelEnabled: superPanelEnabled.value,
       superPanelMouseButton: superPanelMouseButton.value,
       superPanelLongPressMs: superPanelLongPressMs.value,
