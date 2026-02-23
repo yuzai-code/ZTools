@@ -308,6 +308,13 @@
               />
               <p class="input-hint">请输入 npm 包名，支持作用域包（@scope/name）</p>
             </div>
+            <div class="checkbox-group">
+              <label class="checkbox-label">
+                <input v-model="useChinaMirror" type="checkbox" class="checkbox" />
+                <span>使用国内镜像（registry.npmmirror.com）</span>
+              </label>
+              <p class="input-hint">国内网络环境下推荐使用，可提高下载速度</p>
+            </div>
           </div>
           <div class="npm-dialog-footer">
             <button class="btn" @click="closeNpmDialog">取消</button>
@@ -362,6 +369,7 @@ const isPackaging = ref(false)
 // npm 安装相关状态
 const showNpmDialog = ref(false)
 const npmPackageName = ref('')
+const useChinaMirror = ref(false)
 const showMoreMenu = ref(false)
 
 // 详情弹窗状态
@@ -781,6 +789,7 @@ function closePluginDetail(): void {
 // 显示 npm 安装弹窗
 function showNpmInstallDialog(): void {
   npmPackageName.value = ''
+  useChinaMirror.value = false
   showNpmDialog.value = true
   showMoreMenu.value = false
 }
@@ -790,6 +799,7 @@ function closeNpmDialog(): void {
   if (isImportingNpm.value) return
   showNpmDialog.value = false
   npmPackageName.value = ''
+  useChinaMirror.value = false
 }
 
 // 切换更多菜单
@@ -813,7 +823,10 @@ async function installFromNpm(): Promise<void> {
 
   isImportingNpm.value = true
   try {
-    const result = await window.ztools.internal.installPluginFromNpm(packageName)
+    const result = await window.ztools.internal.installPluginFromNpm({
+      packageName,
+      useChinaMirror: useChinaMirror.value
+    })
     if (result.success) {
       // 先设置加载状态为 false，这样 closeNpmDialog 才能正常关闭
       isImportingNpm.value = false
@@ -1222,6 +1235,29 @@ async function installFromNpm(): Promise<void> {
   font-size: 12px;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
 }
 
 .npm-dialog-footer {

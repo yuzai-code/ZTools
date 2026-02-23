@@ -181,12 +181,18 @@ export class InternalPluginAPI {
       return await (pluginsAPI as any).installPluginFromMarket(plugin)
     })
 
-    ipcMain.handle('internal:install-plugin-from-npm', async (event, packageName: string) => {
-      if (!requireInternalPlugin(this.pluginManager, event)) {
-        throw new PermissionDeniedError('internal:install-plugin-from-npm')
+    ipcMain.handle(
+      'internal:install-plugin-from-npm',
+      async (event, options: { packageName: string; useChinaMirror?: boolean }) => {
+        if (!requireInternalPlugin(this.pluginManager, event)) {
+          throw new PermissionDeniedError('internal:install-plugin-from-npm')
+        }
+        return await (pluginsAPI as any).installPluginFromNpm(
+          options.packageName,
+          options.useChinaMirror
+        )
       }
-      return await (pluginsAPI as any).installPluginFromNpm(packageName)
-    })
+    )
 
     ipcMain.handle(
       'internal:get-plugin-readme',

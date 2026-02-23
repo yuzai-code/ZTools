@@ -114,8 +114,10 @@ export class PluginsAPI {
       }
     })
 
-    ipcMain.handle('install-plugin-from-npm', (_event, packageName: string) =>
-      this.installPluginFromNpm(packageName)
+    ipcMain.handle(
+      'install-plugin-from-npm',
+      (_event, options: { packageName: string; useChinaMirror?: boolean }) =>
+        this.installPluginFromNpm(options.packageName, options.useChinaMirror)
     )
   }
 
@@ -1079,14 +1081,18 @@ export class PluginsAPI {
   /**
    * 从 npm 安装插件
    * @param packageName npm 包名（支持作用域包，如 @ztools/example）
+   * @param useChinaMirror 是否使用国内镜像（默认 false）
    */
-  private async installPluginFromNpm(packageName: string): Promise<any> {
+  private async installPluginFromNpm(packageName: string, useChinaMirror = false): Promise<any> {
     try {
       console.log('[Plugins] 开始从 npm 安装插件:', packageName)
 
       // 1. 从 npm registry 获取包信息
-      const registryUrl = `https://registry.npmjs.org/${packageName}`
-      console.log('[Plugins] 获取包信息:', registryUrl)
+      const registryBase = useChinaMirror
+        ? 'https://registry.npmmirror.com'
+        : 'https://registry.npmjs.org'
+      const registryUrl = `${registryBase}/${packageName}`
+      console.log('[Plugins] 获取包信息:', registryUrl, useChinaMirror ? '(国内镜像)' : '')
 
       let packageInfo: any
       try {

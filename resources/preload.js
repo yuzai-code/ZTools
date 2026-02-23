@@ -459,8 +459,8 @@ window.ztools = {
       await electron.ipcRenderer.invoke('internal:fetch-plugin-market'),
     installPluginFromMarket: async (plugin) =>
       await electron.ipcRenderer.invoke('internal:install-plugin-from-market', plugin),
-    installPluginFromNpm: async (packageName) =>
-      await electron.ipcRenderer.invoke('internal:install-plugin-from-npm', packageName),
+    installPluginFromNpm: async (options) =>
+      await electron.ipcRenderer.invoke('internal:install-plugin-from-npm', options),
     getPluginReadme: async (pluginPathOrName, pluginName) =>
       await electron.ipcRenderer.invoke('internal:get-plugin-readme', pluginPathOrName, pluginName),
     getPluginDocKeys: async (pluginPath) =>
