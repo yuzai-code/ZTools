@@ -23,8 +23,8 @@
       <PluginCenter
         v-if="activeMenu === 'plugins'"
         :search-query="props.searchQuery"
-        :add-dev-plugin-file-path="addDevPluginFilePath"
-        :auto-open-plugin-name="autoOpenPluginName"
+        :add-dev-plugin-file-path="localAddDevPluginFilePath"
+        :auto-open-plugin-name="localAutoOpenPluginName"
         @auto-open-consumed="handleAutoOpenConsumed"
         @add-dev-consumed="handleAddDevConsumed"
         @navigate="handleNavigateFromPluginCenter"
@@ -160,17 +160,17 @@ const activeMenu = computed({
 const shortcutAutoAddTarget = ref('')
 
 // 自动打开的插件名称（合并外部传入和内部设置两个来源）
-const autoOpenPluginName = ref('')
+const localAutoOpenPluginName = ref('')
 
 // 添加开发插件文件路径
-const addDevPluginFilePath = ref('')
+const localAddDevPluginFilePath = ref('')
 
 // 监听外部传入的 autoOpenPluginName prop
 watch(
   () => props.autoOpenPluginName,
   (name) => {
     if (name) {
-      autoOpenPluginName.value = name
+      localAutoOpenPluginName.value = name
     }
   },
   { immediate: true }
@@ -181,7 +181,7 @@ watch(
   () => props.addDevPluginFilePath,
   (filePath) => {
     if (filePath) {
-      addDevPluginFilePath.value = filePath
+      localAddDevPluginFilePath.value = filePath
     }
   },
   { immediate: true }
@@ -189,13 +189,13 @@ watch(
 
 // 处理 PluginCenter 消费完 autoOpenPluginName 后的清理
 function handleAutoOpenConsumed(): void {
-  autoOpenPluginName.value = ''
+  localAutoOpenPluginName.value = ''
   emit('auto-open-consumed')
 }
 
 // 处理 PluginCenter 消费完 addDevPluginFilePath 后的清理
 function handleAddDevConsumed(): void {
-  addDevPluginFilePath.value = ''
+  localAddDevPluginFilePath.value = ''
   emit('add-dev-consumed')
 }
 
@@ -220,7 +220,7 @@ function handleNavigateFromPluginCenter(page: string, params?: Record<string, st
 function handlePluginInstalled(pluginName: string): void {
   // 清空文件路径
   emit('update:installPluginFilePath', '')
-  autoOpenPluginName.value = pluginName
+  localAutoOpenPluginName.value = pluginName
   activeMenu.value = 'plugins'
 }
 </script>
