@@ -307,7 +307,7 @@ export class AppsAPI {
         })
 
         // 更新指令使用统计（所有指令都统计，用于匹配推荐排序）
-        await this.updateUsageStats({ path: appPath, type, featureCode, name })
+        this.updateUsageStats({ path: appPath, type, featureCode, name })
 
         // 判断命令类型并决定是否添加历史记录
         if (cmdType === 'window') {
@@ -335,7 +335,7 @@ export class AppsAPI {
             await this.removeFromHistory('special:last-match')
 
             // 将"上次匹配"作为普通指令加入历史记录
-            await this.addToHistory({
+            this.addToHistory({
               path: 'special:last-match',
               type: 'plugin',
               name: '上次匹配',
@@ -344,7 +344,7 @@ export class AppsAPI {
           }
         } else {
           // 非匹配指令，正常添加到历史记录
-          await this.addToHistory({ path: appPath, type, featureCode, param, name, cmdType })
+          this.addToHistory({ path: appPath, type, featureCode, param, name, cmdType })
         }
 
         // 读取 plugin.json（一次性读取，后续复用）
@@ -437,7 +437,7 @@ export class AppsAPI {
         }
 
         // 添加到历史记录
-        await this.addToHistory({ path: appPath, type: 'app', name, cmdType: 'text' })
+        this.addToHistory({ path: appPath, type: 'app', name, cmdType: 'text' })
 
         // 通知渲染进程应用已启动（清空搜索框等）
         this.notifyRenderer('app-launched')
@@ -555,6 +555,23 @@ export class AppsAPI {
                 type: 'system-setting',
                 category: setting.category
               }
+            }
+          }
+        }
+
+        // 如果仍未找到，尝试从本地启动项中查找
+        if (!appInfo) {
+          const localShortcuts = await databaseAPI.dbGet('local-shortcuts')
+          const shortcut = localShortcuts?.find((s: any) => s.path === appPath)
+          if (shortcut) {
+            appInfo = {
+              name: cmdName || shortcut.alias || shortcut.name,
+              path: shortcut.path,
+              icon: shortcut.icon || '',
+              type: 'direct',
+              subType: 'local-shortcut',
+              pinyin: shortcut.pinyin || '',
+              pinyinAbbr: shortcut.pinyinAbbr || ''
             }
           }
         }

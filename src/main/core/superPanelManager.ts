@@ -5,6 +5,7 @@ import path from 'path'
 import plist from 'simple-plist'
 import { is } from '@electron-toolkit/utils'
 import { ClipboardMonitor, MouseMonitor, WindowManager } from './native/index.js'
+import { launchApp } from './commandLauncher/index.js'
 import databaseAPI from '../api/shared/database.js'
 import windowManager from '../managers/windowManager.js'
 import { applyWindowMaterial, getDefaultWindowMaterial } from '../utils/windowUtils.js'
@@ -500,6 +501,12 @@ class SuperPanelManager {
       try {
         // 隐藏超级面板
         this.hideWindow()
+
+        // direct 类型（系统应用/系统设置）直接在主进程启动，不唤出主窗口
+        if (command.type === 'direct') {
+          await launchApp(command.path)
+          return { success: true }
+        }
 
         if (!this.mainWindow || this.mainWindow.isDestroyed()) {
           return { success: false, error: '主窗口不可用' }

@@ -127,7 +127,18 @@
               v-for="(cmd, index) in filteredSystemCommands"
               :key="index"
               :command="cmd"
-            />
+            >
+              <template #action>
+                <TagDropdown
+                  :menu-items="getAppMenuItems(cmd)"
+                  @select="(key) => handleAppMenuSelect(key, cmd)"
+                >
+                  <button class="card-more-btn" title="更多操作">
+                    <Icon name="more" :size="16" />
+                  </button>
+                </TagDropdown>
+              </template>
+            </CommandCard>
           </template>
 
           <!-- 插件：按 feature 分组显示 -->
@@ -227,6 +238,7 @@ import { computed, onMounted, ref } from 'vue'
 import settingsFillIcon from '../../assets/image/settings-fill.png'
 import { weightedSearch } from '../../utils/weightedSearch'
 import AdaptiveIcon from '../common/AdaptiveIcon.vue'
+import Icon from '../common/Icon.vue'
 import CommandCard from './common/CommandCard.vue'
 import CommandTag from './common/CommandTag.vue'
 import FeatureCard from './common/FeatureCard.vue'
@@ -381,6 +393,13 @@ function isPinnedToSuperPanel(pluginName: string, featureCode: string, cmdName: 
   )
 }
 
+// 检查系统应用是否已固定到超级面板（基于 path + name 匹配）
+function isAppPinnedToSuperPanel(cmd: Command): boolean {
+  return superPanelPinned.value.some(
+    (item) => item.path === cmd.path && item.name === cmd.name && item.type === 'direct'
+  )
+}
+
 // 固定/取消固定到超级面板
 async function toggleSuperPanelPin(
   pluginName: string,
@@ -429,6 +448,35 @@ async function toggleSuperPanelPin(
   }
 }
 
+// 固定/取消固定系统应用到超级面板
+async function toggleAppSuperPanelPin(cmd: Command): Promise<void> {
+  const isPinned = isAppPinnedToSuperPanel(cmd)
+
+  if (isPinned) {
+    superPanelPinned.value = superPanelPinned.value.filter(
+      (item) => !(item.path === cmd.path && item.name === cmd.name && item.type === 'direct')
+    )
+  } else {
+    superPanelPinned.value.push({
+      name: cmd.name,
+      path: cmd.path || '',
+      icon: cmd.icon || '',
+      type: cmd.type,
+      featureCode: '',
+      pluginName: '',
+      pluginExplain: '',
+      cmdType: cmd.cmdType || 'text'
+    })
+  }
+
+  try {
+    const plainArray = JSON.parse(JSON.stringify(superPanelPinned.value))
+    await window.ztools.internal.dbPut(SUPER_PANEL_PINNED_KEY, plainArray)
+  } catch (error) {
+    console.error('保存超级面板固定列表失败:', error)
+  }
+}
+
 // 加载搜索窗口固定列表
 async function loadSearchPinned(): Promise<void> {
   try {
@@ -446,6 +494,11 @@ function isPinnedToSearch(featureCode: string): boolean {
   return searchPinned.value.some(
     (item) => item.path === selectedSource.value?.path && item.featureCode === featureCode
   )
+}
+
+// 检查系统应用是否已固定到搜索窗口（基于 path + name 匹配）
+function isAppPinnedToSearch(cmd: Command): boolean {
+  return searchPinned.value.some((item) => item.path === cmd.path && item.name === cmd.name)
 }
 
 // 固定/取消固定到搜索窗口
@@ -473,6 +526,90 @@ async function toggleSearchPin(
 
   // 重新加载固定列表
   await loadSearchPinned()
+}
+
+// 固定/取消固定系统应用到搜索窗口
+async function toggleAppSearchPin(cmd: Command): Promise<void> {
+  const pinned = isAppPinnedToSearch(cmd)
+
+  if (pinned) {
+    await window.ztools.internal.unpinApp(cmd.path || '', undefined, cmd.name)
+  } else {
+    await window.ztools.internal.pinApp(JSON.parse(JSON.stringify(cmd)))
+  }
+
+  await loadSearchPinned()
+}
+
+// 系统应用下拉菜单项
+function getAppMenuItems(cmd: Command): MenuItem[] {
+  const items: MenuItem[] = []
+  // 与 commandUtils.getCommandId 格式一致：pluginName:featureCode:name:cmdType
+  const cmdId = getCommandId('', '', cmd.name, cmd.cmdType || 'text')
+  const disabled = disabledCommands.value.includes(cmdId)
+
+  // 打开应用
+  items.push({
+    key: 'open',
+    label: '打开应用',
+    icon: 'play'
+  })
+
+  // 固定到超级面板
+  const superPinned = isAppPinnedToSuperPanel(cmd)
+  items.push({
+    key: 'pin-super-panel',
+    label: superPinned ? '取消固定超级面板' : '固定到超级面板',
+    icon: 'pin'
+  })
+
+  // 固定到搜索窗口
+  const pinned = isAppPinnedToSearch(cmd)
+  items.push({
+    key: 'pin-search',
+    label: pinned ? '取消固定搜索' : '固定到搜索',
+    icon: 'pin'
+  })
+
+  // 启用/禁用指令
+  items.push({
+    key: 'toggle',
+    label: disabled ? '启用指令' : '禁用指令',
+    icon: disabled ? 'check' : 'ban',
+    danger: !disabled
+  })
+
+  return items
+}
+
+// 处理系统应用下拉菜单选择
+async function handleAppMenuSelect(key: string, cmd: Command): Promise<void> {
+  if (key === 'open') {
+    // 打开应用
+    try {
+      await window.ztools.internal.launch({
+        path: cmd.path || '',
+        type: cmd.type,
+        name: cmd.name,
+        param: {}
+      })
+    } catch (error) {
+      console.error('打开应用失败:', error)
+    }
+  } else if (key === 'pin-super-panel') {
+    await toggleAppSuperPanelPin(cmd)
+  } else if (key === 'pin-search') {
+    await toggleAppSearchPin(cmd)
+  } else if (key === 'toggle') {
+    const cmdId = getCommandId('', '', cmd.name, cmd.cmdType || 'text')
+    const index = disabledCommands.value.indexOf(cmdId)
+    if (index === -1) {
+      disabledCommands.value.push(cmdId)
+    } else {
+      disabledCommands.value.splice(index, 1)
+    }
+    await saveDisabledCommands()
+  }
 }
 
 // 下拉菜单项
@@ -1337,5 +1474,25 @@ onMounted(async () => {
 .empty-state p {
   margin: 0;
   font-size: 14px;
+}
+
+/* === 系统应用操作按钮 === */
+.card-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.card-more-btn:hover {
+  background: var(--control-bg);
+  color: var(--text-color);
 }
 </style>

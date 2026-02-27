@@ -578,6 +578,11 @@
       stroke-linecap="round"
       stroke-linejoin="round"
     />
+
+    <!-- 更多图标 - More (三个水平圆点) -->
+    <circle v-if="name === 'more'" cx="12" cy="12" r="1" fill="currentColor" />
+    <circle v-if="name === 'more'" cx="5" cy="12" r="1" fill="currentColor" />
+    <circle v-if="name === 'more'" cx="19" cy="12" r="1" fill="currentColor" />
   </svg>
 </template>
 

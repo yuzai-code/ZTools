@@ -29,3 +29,4 @@ export type IconName =
   | 'pin'
   | 'info'
   | 'terminal'
+  | 'more'

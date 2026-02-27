@@ -179,10 +179,6 @@ export const useCommandDataStore = defineStore('commandData', () => {
 
   // 检查指令是否被禁用
   function isCommandDisabled(cmd: Command): boolean {
-    // 只检查插件指令
-    if (cmd.type !== 'plugin') {
-      return false
-    }
     const id = getCommandId(cmd)
     return disabledCommands.value.includes(id)
   }

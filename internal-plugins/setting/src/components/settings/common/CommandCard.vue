@@ -41,6 +41,9 @@
         </slot>
       </div>
     </div>
+    <div v-if="$slots.action" class="command-actions">
+      <slot name="action"></slot>
+    </div>
   </div>
 </template>
 
@@ -179,6 +182,17 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.command-actions {
+  flex-shrink: 0;
+  margin-left: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.command-card:hover .command-actions {
+  opacity: 1;
 }
 
 /* 懒加载占位符 - 轻量级骨架效果 */

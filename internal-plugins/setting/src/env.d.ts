@@ -85,6 +85,7 @@ declare global {
           param?: any
           name?: string
         }) => Promise<{ success: boolean; error?: string }>
+        openApp: (appPath: string) => Promise<void>
 
         // 插件市场
         fetchPluginMarket: () => Promise<{ success: boolean; data?: any; error?: string }>
