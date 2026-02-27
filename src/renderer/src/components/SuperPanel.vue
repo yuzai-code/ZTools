@@ -12,6 +12,24 @@
           @click="showMainWindow"
         />
         <span class="header-text">超级面板</span>
+        <div class="header-spacer" />
+        <div class="header-menu-btn" title="窗口匹配" @click="openWindowMatch">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect
+              x="1"
+              y="2"
+              width="14"
+              height="11"
+              rx="1.5"
+              stroke="currentColor"
+              stroke-width="1.3"
+              fill="none"
+            />
+            <rect x="1" y="2" width="14" height="3" rx="1.5" fill="currentColor" opacity="0.3" />
+            <circle cx="3" cy="3.5" r="0.7" fill="currentColor" />
+            <circle cx="5" cy="3.5" r="0.7" fill="currentColor" />
+          </svg>
+        </div>
       </div>
 
       <!-- 固定列表：使用 Draggable 组件 -->
@@ -72,6 +90,24 @@
           </svg>
         </div>
         <span class="header-text">{{ clipboardDescription }}</span>
+        <div class="header-spacer" />
+        <div class="header-menu-btn" title="窗口匹配" @click="openWindowMatch">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect
+              x="1"
+              y="2"
+              width="14"
+              height="11"
+              rx="1.5"
+              stroke="currentColor"
+              stroke-width="1.3"
+              fill="none"
+            />
+            <rect x="1" y="2" width="14" height="3" rx="1.5" fill="currentColor" opacity="0.3" />
+            <circle cx="3" cy="3.5" r="0.7" fill="currentColor" />
+            <circle cx="5" cy="3.5" r="0.7" fill="currentColor" />
+          </svg>
+        </div>
       </div>
 
       <!-- 搜索结果列表 -->
@@ -110,6 +146,56 @@
     <div v-else class="loading-state">
       <span class="loading-text">加载中...</span>
     </div>
+
+    <!-- 窗口匹配底部滑出面板 -->
+    <Transition name="slide-up">
+      <div v-if="showWindowMatch" class="window-match-overlay">
+        <div class="window-match-backdrop" @click="closeWindowMatch" />
+        <div class="window-match-panel">
+          <div class="window-match-header">
+            <span class="window-match-title">窗口匹配</span>
+            <div class="header-menu-btn" title="关闭" @click="closeWindowMatch">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path
+                  d="M3 3l8 8M11 3l-8 8"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </div>
+          </div>
+          <div class="window-match-list">
+            <div
+              v-for="(item, index) in windowMatchResults"
+              :key="`wm-${item.path}-${item.featureCode || ''}`"
+              class="list-item"
+              :class="{ selected: index === windowMatchSelectedIndex }"
+              @click="launchWindowMatch(item)"
+              @mouseenter="windowMatchSelectedIndex = index"
+            >
+              <img
+                v-if="item.icon && !iconErrors.has(getItemKey(item))"
+                :src="item.icon"
+                class="list-icon"
+                draggable="false"
+                @error="iconErrors.add(getItemKey(item))"
+              />
+              <div v-else class="list-icon-placeholder">
+                {{ item.name.charAt(0).toUpperCase() }}
+              </div>
+              <div class="list-info">
+                <span class="list-name">{{ item.name }}</span>
+                <span v-if="item.pluginExplain" class="list-desc">{{ item.pluginExplain }}</span>
+              </div>
+            </div>
+            <div v-if="windowMatchResults.length === 0" class="empty-state window-match-empty">
+              <span class="empty-text">无匹配结果</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -151,6 +237,11 @@ const acrylicLightOpacity = ref(78)
 const acrylicDarkOpacity = ref(50)
 const primaryColor = ref('blue')
 const customColor = ref('#db2777')
+// 窗口匹配相关状态
+const showWindowMatch = ref(false)
+const windowMatchResults = ref<CommandItem[]>([])
+const windowMatchSelectedIndex = ref(0)
+const currentWindowInfo = ref<{ app?: string; title?: string } | null>(null)
 
 function getThemeColor(colorName: string, isDark: boolean): string {
   const colors: Record<string, { light: string; dark: string }> = {
@@ -264,6 +355,30 @@ function showPinned(): void {
 // 点击头像：隐藏超级面板，显示主搜索窗口
 function showMainWindow(): void {
   window.ztools.superPanelShowMainWindow()
+}
+
+// 打开窗口匹配面板
+function openWindowMatch(): void {
+  showWindowMatch.value = true
+  windowMatchSelectedIndex.value = 0
+  windowMatchResults.value = []
+  // 发起窗口匹配搜索
+  if (currentWindowInfo.value) {
+    window.ztools.superPanelSearchWindowCommands(
+      JSON.parse(JSON.stringify(currentWindowInfo.value))
+    )
+  }
+}
+
+// 关闭窗口匹配面板
+function closeWindowMatch(): void {
+  showWindowMatch.value = false
+}
+
+// 从窗口匹配面板启动指令
+async function launchWindowMatch(cmd: CommandItem): Promise<void> {
+  closeWindowMatch()
+  await launch(cmd)
 }
 
 function getItemKey(item: CommandItem): string {
@@ -399,6 +514,13 @@ onMounted(() => {
       'count:',
       data.commands?.length || data.results?.length || 0
     )
+    // 保存窗口信息
+    if (data.windowInfo) {
+      currentWindowInfo.value = data.windowInfo
+    }
+    // 收到新数据时关闭窗口匹配面板
+    showWindowMatch.value = false
+
     if (data.type === 'pinned') {
       mode.value = 'pinned'
       pinnedCommands.value = data.commands || []
@@ -417,6 +539,12 @@ onMounted(() => {
 
   // 通知主进程窗口已准备好
   window.ztools.superPanelReady()
+
+  // 监听窗口匹配搜索结果
+  window.ztools.onSuperPanelWindowCommandsData((data: { results: any[] }) => {
+    windowMatchResults.value = data.results || []
+    windowMatchSelectedIndex.value = 0
+  })
 
   // 加载设置（头像、亚克力透明度、主题色）
   window.ztools
@@ -804,5 +932,96 @@ onUnmounted(() => {
 .loading-text {
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* ========== 标题栏间距 ========== */
+.header-spacer {
+  flex: 1;
+}
+
+/* ========== 窗口匹配底部滑出面板 ========== */
+.window-match-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.window-match-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.window-match-panel {
+  position: relative;
+  z-index: 1;
+  background: #f4f4f4;
+  border-top: 1px solid var(--divider-color);
+  border-radius: 12px 12px 0 0;
+  max-height: 75%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .window-match-panel {
+    background: #303133;
+  }
+}
+
+.window-match-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--divider-color);
+  flex-shrink: 0;
+}
+
+.window-match-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.window-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.window-match-empty {
+  min-height: 60px;
+}
+
+/* ========== 滑出动画 ========== */
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.slide-up-enter-active .window-match-panel,
+.slide-up-leave-active .window-match-panel {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-from .window-match-panel,
+.slide-up-leave-to .window-match-panel {
+  transform: translateY(100%);
 }
 </style>

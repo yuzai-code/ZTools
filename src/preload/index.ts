@@ -349,6 +349,22 @@ const api = {
     ipcRenderer.invoke('super-panel:unpin-command', path, featureCode),
   onSuperPanelLaunch: (callback: (data: { command: any; clipboardContent?: any }) => void) => {
     ipcRenderer.on('super-panel-launch', (_event, data) => callback(data))
+  },
+  // 超级面板窗口匹配
+  superPanelSearchWindowCommands: (windowInfo: { app?: string; title?: string }) =>
+    ipcRenderer.invoke('super-panel:search-window-commands', windowInfo),
+  onSuperPanelWindowCommandsData: (callback: (data: { results: any[] }) => void) => {
+    ipcRenderer.on('super-panel-window-commands-data', (_event, data) => callback(data))
+  },
+  onSuperPanelSearchWindowCommands: (
+    callback: (windowInfo: { app?: string; title?: string }) => void
+  ) => {
+    ipcRenderer.on('super-panel-search-window-commands', (_event, windowInfo) =>
+      callback(windowInfo)
+    )
+  },
+  sendSuperPanelWindowCommandsResult: (data: { results: any[] }) => {
+    ipcRenderer.send('super-panel-window-commands-result', data)
   }
 }
 

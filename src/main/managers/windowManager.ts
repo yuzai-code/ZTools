@@ -413,6 +413,22 @@ class WindowManager {
     this.previousActiveWindow = clipboardManager.getCurrentWindow()
   }
 
+  public setPreviousActiveWindow(
+    windowInfo: {
+      app: string
+      bundleId?: string
+      pid?: number
+      title?: string
+      x?: number
+      y?: number
+      width?: number
+      height?: number
+      appPath?: string
+    } | null
+  ): void {
+    this.previousActiveWindow = windowInfo
+  }
+
   /**
    * 记录当前的焦点状态（在隐藏之前调用）
    * 注意：焦点状态现在通过事件监听实时跟踪,此方法仅用于确保状态正确

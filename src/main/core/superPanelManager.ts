@@ -8,6 +8,7 @@ import { ClipboardMonitor, MouseMonitor, WindowManager } from './native/index.js
 import { launchApp } from './commandLauncher/index.js'
 import databaseAPI from '../api/shared/database.js'
 import windowManager from '../managers/windowManager.js'
+import clipboardManager from '../managers/clipboardManager.js'
 import { applyWindowMaterial, getDefaultWindowMaterial } from '../utils/windowUtils.js'
 
 // 超级面板窗口尺寸
@@ -130,6 +131,18 @@ class SuperPanelManager {
 
   // 当前剪贴板内容（在模拟复制后读取）
   private currentClipboardContent: ClipboardContent | null = null
+  // 触发时的完整窗口信息
+  private currentWindowInfo: {
+    app: string
+    bundleId?: string
+    pid?: number
+    title?: string
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+    appPath?: string
+  } | null = null
 
   /**
    * 读取剪贴板内容（支持文件、图片、文字三种类型）
@@ -203,6 +216,10 @@ class SuperPanelManager {
     try {
       // 1. 记录鼠标位置
       const cursorPoint = screen.getCursorScreenPoint()
+
+      // 1.5. 记录触发前的窗口信息
+      const windowInfo = clipboardManager.getCurrentWindow()
+      this.currentWindowInfo = windowInfo ?? null
 
       // 2. 记录当前剪贴板内容快照（用于对比是否有新内容）
       const oldContent = this.readClipboardContent()
@@ -458,13 +475,15 @@ class SuperPanelManager {
       // 发送固定列表到超级面板窗口
       this.sendToSuperPanel('super-panel-data', {
         type: 'pinned',
-        commands: pinnedCommands
+        commands: pinnedCommands,
+        windowInfo: this.currentWindowInfo
       })
     } catch (error) {
       console.error('[SuperPanel] 加载超级面板固定列表失败:', error)
       this.sendToSuperPanel('super-panel-data', {
         type: 'pinned',
-        commands: []
+        commands: [],
+        windowInfo: this.currentWindowInfo
       })
     }
   }
@@ -491,7 +510,8 @@ class SuperPanelManager {
         this.sendToSuperPanel('super-panel-data', {
           type: 'search',
           results: data.results,
-          clipboardContent: data.clipboardContent
+          clipboardContent: data.clipboardContent,
+          windowInfo: this.currentWindowInfo
         })
       }
     )
@@ -513,6 +533,9 @@ class SuperPanelManager {
         }
 
         // 先显示主窗口，确保渲染进程能正常处理启动指令
+        if (this.currentWindowInfo) {
+          windowManager.setPreviousActiveWindow(this.currentWindowInfo)
+        }
         this.mainWindow.show()
 
         // 转发给主渲染进程，由 handleSelectApp 统一处理
@@ -552,6 +575,11 @@ class SuperPanelManager {
     // 超级面板头像点击：隐藏超级面板，显示主搜索窗口
     ipcMain.on('super-panel:show-main-window', () => {
       this.hideWindow()
+      // 将超级面板触发前的窗口信息设置到主窗口管理器，
+      // 否则 showWindow() 会获取到超级面板自身作为 previousActiveWindow
+      if (this.currentWindowInfo) {
+        windowManager.setPreviousActiveWindow(this.currentWindowInfo)
+      }
       windowManager.showWindow()
     })
 
@@ -605,6 +633,27 @@ class SuperPanelManager {
         }
       }
     )
+
+    // 超级面板请求窗口匹配搜索 → 转发给主渲染进程
+    ipcMain.handle(
+      'super-panel:search-window-commands',
+      async (_event, windowInfo: { app?: string; title?: string }) => {
+        // 设置触发前的窗口信息到主窗口管理器
+        if (this.currentWindowInfo) {
+          windowManager.setPreviousActiveWindow(this.currentWindowInfo)
+        }
+        if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+          this.sendToSuperPanel('super-panel-window-commands-data', { results: [] })
+          return
+        }
+        this.mainWindow.webContents.send('super-panel-search-window-commands', windowInfo)
+      }
+    )
+
+    // 主渲染进程返回窗口匹配结果 → 转发到超级面板
+    ipcMain.on('super-panel-window-commands-result', (_event, data: { results: any[] }) => {
+      this.sendToSuperPanel('super-panel-window-commands-data', data)
+    })
   }
 }
 

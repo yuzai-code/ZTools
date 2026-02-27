@@ -695,7 +695,7 @@ onMounted(async () => {
   // 监听全局快捷键触发的启动事件
   window.ztools.onIpcLaunch((options) => {
     console.log('收到 IPC 启动事件:', options)
-    
+
     // 转换旧的 'app' 类型为新的 'direct' 类型
     const launchOptions: any = {
       ...options,
@@ -836,6 +836,14 @@ onMounted(async () => {
     window.ztools.sendSuperPanelSearchResult({
       results: JSON.parse(JSON.stringify(results)),
       clipboardContent: cc
+    })
+  })
+
+  // 监听超级面板窗口匹配搜索请求
+  window.ztools.onSuperPanelSearchWindowCommands((windowInfo: { app?: string; title?: string }) => {
+    const results = commandDataStore.searchWindowCommands(windowInfo)
+    window.ztools.sendSuperPanelWindowCommandsResult({
+      results: JSON.parse(JSON.stringify(results))
     })
   })
 

@@ -340,6 +340,7 @@ declare global {
           commands?: any[]
           results?: any[]
           clipboardContent?: any
+          windowInfo?: { app?: string; title?: string }
         }) => void
       ) => void
       superPanelLaunch: (command: any) => Promise<{ success: boolean; error?: string }>
@@ -356,6 +357,16 @@ declare global {
       onSuperPanelLaunch: (
         callback: (data: { command: any; clipboardContent?: any }) => void
       ) => void
+      // 超级面板窗口匹配
+      superPanelSearchWindowCommands: (windowInfo: {
+        app?: string
+        title?: string
+      }) => Promise<void>
+      onSuperPanelWindowCommandsData: (callback: (data: { results: any[] }) => void) => void
+      onSuperPanelSearchWindowCommands: (
+        callback: (windowInfo: { app?: string; title?: string }) => void
+      ) => void
+      sendSuperPanelWindowCommandsResult: (data: { results: any[] }) => void
       onFloatingBallFiles: (
         callback: (files: Array<{ path: string; name: string; isDirectory: boolean }>) => void
       ) => void
