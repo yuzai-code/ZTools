@@ -884,11 +884,22 @@ export const useCommandDataStore = defineStore('commandData', () => {
         // 2.3 检查正则表达式匹配
         if (filesCmd.match) {
           try {
-            const matchStr = filesCmd.match.replace(/^\/|\/[gimuy]*$/g, '')
-            const regex = new RegExp(matchStr)
-            const testResult = regex.test(file.name)
-            if (!testResult) {
-              return false
+            // 解析正则表达式字符串（格式：/pattern/flags）
+            const match = filesCmd.match.match(/^\/(.+)\/([gimuy]*)$/)
+            if (match) {
+              const pattern = match[1]
+              const flags = match[2]
+              const regex = new RegExp(pattern, flags)
+              const testResult = regex.test(file.name)
+              if (!testResult) {
+                return false
+              }
+            } else {
+              // 如果不是标准格式，直接作为字符串匹配
+              const testResult = file.name.includes(filesCmd.match)
+              if (!testResult) {
+                return false
+              }
             }
           } catch (error) {
             console.error(`正则表达式 ${filesCmd.match} 解析失败:`, error)

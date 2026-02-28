@@ -708,6 +708,8 @@ onMounted(async () => {
   await loadPlugins()
   // 如果有需要自动打开的插件，加载完成后打开详情
   tryAutoOpenPlugin()
+  // 如果有需要自动添加的开发插件，加载完成后添加
+  tryAutoAddDevPlugin()
   window.addEventListener('keydown', handleKeydown, true)
   window.addEventListener('click', handleClickOutside)
 
