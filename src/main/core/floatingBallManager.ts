@@ -25,7 +25,7 @@ class FloatingBallManager {
    */
   public async init(): Promise<void> {
     this.setupIPC()
-    await this.loadConfig()
+    this.loadConfig()
   }
 
   /**
@@ -33,13 +33,13 @@ class FloatingBallManager {
    */
   private async loadConfig(): Promise<void> {
     try {
-      const data = await databaseAPI.dbGet('settings-general')
+      const data = databaseAPI.dbGet('settings-general')
       this.enabled = data?.floatingBallEnabled ?? false
       this.letter = data?.floatingBallLetter || 'Z'
       this.doubleClickCommand = data?.floatingBallDoubleClickCommand || ''
 
       if (this.enabled) {
-        await this.createBallWindow()
+        this.createBallWindow()
 
         // 恢复保存的位置
         const savedPos = data?.floatingBallPosition
@@ -109,7 +109,7 @@ class FloatingBallManager {
     )
 
     // 外部控制：显示/隐藏悬浮球
-    ipcMain.handle('floating-ball:set-enabled', async (_event, enabled: boolean) => {
+    ipcMain.handle('floating-ball:set-enabled', (_event, enabled: boolean) => {
       return this.setEnabled(enabled)
     })
 
@@ -119,7 +119,7 @@ class FloatingBallManager {
     })
 
     // 外部控制：设置悬浮球文字
-    ipcMain.handle('floating-ball:set-letter', async (_event, letter: string) => {
+    ipcMain.handle('floating-ball:set-letter', (_event, letter: string) => {
       return this.setLetter(letter)
     })
 
@@ -129,7 +129,7 @@ class FloatingBallManager {
     })
 
     // 外部控制：设置双击目标指令
-    ipcMain.handle('floating-ball:set-double-click-command', async (_event, command: string) => {
+    ipcMain.handle('floating-ball:set-double-click-command', (_event, command: string) => {
       return this.setDoubleClickCommand(command)
     })
 
@@ -142,7 +142,7 @@ class FloatingBallManager {
   /**
    * 创建悬浮球窗口
    */
-  private async createBallWindow(): Promise<void> {
+  private createBallWindow(): void {
     if (this.ballWindow && !this.ballWindow.isDestroyed()) {
       this.ballWindow.show()
       return
@@ -268,15 +268,15 @@ class FloatingBallManager {
   /**
    * 保存悬浮球位置到数据库
    */
-  private async savePosition(): Promise<void> {
+  private savePosition(): void {
     if (!this.ballWindow || this.ballWindow.isDestroyed()) return
 
     const [x, y] = this.ballWindow.getPosition()
 
     try {
-      const data = (await databaseAPI.dbGet('settings-general')) || {}
+      const data = databaseAPI.dbGet('settings-general') || {}
       data.floatingBallPosition = { x, y }
-      await databaseAPI.dbPut('settings-general', data)
+      databaseAPI.dbPut('settings-general', data)
       console.log('[FloatingBall] 悬浮球位置已保存:', { x, y })
     } catch (error) {
       console.error('[FloatingBall] 保存悬浮球位置失败:', error)
@@ -315,16 +315,16 @@ class FloatingBallManager {
     this.enabled = enabled
 
     if (enabled) {
-      await this.createBallWindow()
+      this.createBallWindow()
     } else {
       this.destroyBallWindow()
     }
 
     // 保存到数据库
     try {
-      const data = (await databaseAPI.dbGet('settings-general')) || {}
+      const data = databaseAPI.dbGet('settings-general') || {}
       data.floatingBallEnabled = enabled
-      await databaseAPI.dbPut('settings-general', data)
+      databaseAPI.dbPut('settings-general', data)
       console.log('[FloatingBall] 悬浮球已', enabled ? '启用' : '禁用')
     } catch (error) {
       console.error('[FloatingBall] 保存悬浮球设置失败:', error)
@@ -336,7 +336,7 @@ class FloatingBallManager {
   /**
    * 设置悬浮球显示文字
    */
-  public async setLetter(letter: string): Promise<{ success: boolean }> {
+  public setLetter(letter: string): { success: boolean } {
     this.letter = letter || 'Z'
 
     // 通知悬浮球窗口更新文字
@@ -346,9 +346,9 @@ class FloatingBallManager {
 
     // 保存到数据库
     try {
-      const data = (await databaseAPI.dbGet('settings-general')) || {}
+      const data = databaseAPI.dbGet('settings-general') || {}
       data.floatingBallLetter = this.letter
-      await databaseAPI.dbPut('settings-general', data)
+      databaseAPI.dbPut('settings-general', data)
       console.log('悬浮球文字已更新:', this.letter)
     } catch (error) {
       console.error('保存悬浮球文字失败:', error)
@@ -360,14 +360,14 @@ class FloatingBallManager {
   /**
    * 设置悬浮球双击目标指令
    */
-  public async setDoubleClickCommand(command: string): Promise<{ success: boolean }> {
+  public setDoubleClickCommand(command: string): { success: boolean } {
     this.doubleClickCommand = command || ''
 
     // 保存到数据库
     try {
-      const data = (await databaseAPI.dbGet('settings-general')) || {}
+      const data = databaseAPI.dbGet('settings-general') || {}
       data.floatingBallDoubleClickCommand = this.doubleClickCommand
-      await databaseAPI.dbPut('settings-general', data)
+      databaseAPI.dbPut('settings-general', data)
       console.log('悬浮球双击目标指令已更新:', this.doubleClickCommand)
     } catch (error) {
       console.error('保存悬浮球双击目标指令失败:', error)

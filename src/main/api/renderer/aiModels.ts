@@ -34,7 +34,7 @@ class AiModelsAPI {
     // 获取所有 AI 模型
     ipcMain.handle('ai-models:get-all', async () => {
       try {
-        const models = await this.getAllModels()
+        const models = this.getAllModels()
         return { success: true, data: models }
       } catch (error: unknown) {
         console.error('[AIModels] 获取 AI 模型列表失败:', error)
@@ -46,9 +46,9 @@ class AiModelsAPI {
     })
 
     // 添加 AI 模型
-    ipcMain.handle('ai-models:add', async (_event, model: AiModel) => {
+    ipcMain.handle('ai-models:add', (_event, model: AiModel) => {
       try {
-        const result = await this.addModel(model)
+        const result = this.addModel(model)
         return result
       } catch (error: unknown) {
         console.error('[AIModels] 添加 AI 模型失败:', error)
@@ -60,9 +60,9 @@ class AiModelsAPI {
     })
 
     // 更新 AI 模型
-    ipcMain.handle('ai-models:update', async (_event, model: AiModel) => {
+    ipcMain.handle('ai-models:update', (_event, model: AiModel) => {
       try {
-        const result = await this.updateModel(model)
+        const result = this.updateModel(model)
         return result
       } catch (error: unknown) {
         console.error('[AIModels] 更新 AI 模型失败:', error)
@@ -74,9 +74,9 @@ class AiModelsAPI {
     })
 
     // 删除 AI 模型
-    ipcMain.handle('ai-models:delete', async (_event, modelId: string) => {
+    ipcMain.handle('ai-models:delete', (_event, modelId: string) => {
       try {
-        const result = await this.deleteModel(modelId)
+        const result = this.deleteModel(modelId)
         return result
       } catch (error: unknown) {
         console.error('[AIModels] 删除 AI 模型失败:', error)
@@ -91,9 +91,9 @@ class AiModelsAPI {
   /**
    * 获取所有 AI 模型
    */
-  public async getAllModels(): Promise<AiModel[]> {
+  public getAllModels(): AiModel[] {
     try {
-      const data = await databaseAPI.dbGet(this.DB_KEY)
+      const data = databaseAPI.dbGet(this.DB_KEY)
       if (data && Array.isArray(data)) {
         return data
       }
@@ -107,13 +107,13 @@ class AiModelsAPI {
   /**
    * 添加 AI 模型
    */
-  private async addModel(model: AiModel): Promise<{ success: boolean; error?: string }> {
+  private addModel(model: AiModel): { success: boolean; error?: string } {
     // 验证必填字段
     if (!model.id || !model.label || !model.apiUrl || !model.apiKey) {
       return { success: false, error: '模型ID、名称、API地址和密钥不能为空' }
     }
 
-    const models = await this.getAllModels()
+    const models = this.getAllModels()
 
     // 检查是否已存在相同 ID 的模型
     if (models.some((m: AiModel) => m.id === model.id)) {
@@ -124,7 +124,7 @@ class AiModelsAPI {
     models.push(model)
 
     // 保存到数据库（databaseAPI 会自动处理 _rev）
-    await databaseAPI.dbPut(this.DB_KEY, models)
+    databaseAPI.dbPut(this.DB_KEY, models)
 
     return { success: true }
   }
@@ -132,13 +132,13 @@ class AiModelsAPI {
   /**
    * 更新 AI 模型
    */
-  private async updateModel(model: AiModel): Promise<{ success: boolean; error?: string }> {
+  private updateModel(model: AiModel): { success: boolean; error?: string } {
     // 验证必填字段
     if (!model.id || !model.label || !model.apiUrl || !model.apiKey) {
       return { success: false, error: '模型ID、名称、API地址和密钥不能为空' }
     }
 
-    const models = await this.getAllModels()
+    const models = this.getAllModels()
 
     // 查找要更新的模型
     const index = models.findIndex((m: AiModel) => m.id === model.id)
@@ -150,7 +150,7 @@ class AiModelsAPI {
     models[index] = model
 
     // 保存到数据库（databaseAPI 会自动处理 _rev）
-    await databaseAPI.dbPut(this.DB_KEY, models)
+    databaseAPI.dbPut(this.DB_KEY, models)
 
     return { success: true }
   }
@@ -158,8 +158,8 @@ class AiModelsAPI {
   /**
    * 删除 AI 模型
    */
-  private async deleteModel(modelId: string): Promise<{ success: boolean; error?: string }> {
-    const models = await this.getAllModels()
+  private deleteModel(modelId: string): { success: boolean; error?: string } {
+    const models = this.getAllModels()
 
     // 查找要删除的模型
     const index = models.findIndex((m: AiModel) => m.id === modelId)
@@ -171,7 +171,7 @@ class AiModelsAPI {
     models.splice(index, 1)
 
     // 保存到数据库（databaseAPI 会自动处理 _rev）
-    await databaseAPI.dbPut(this.DB_KEY, models)
+    databaseAPI.dbPut(this.DB_KEY, models)
 
     return { success: true }
   }

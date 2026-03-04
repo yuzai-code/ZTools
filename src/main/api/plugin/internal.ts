@@ -61,18 +61,18 @@ export class InternalPluginAPI {
 
   private setupIPC(): void {
     // ==================== 数据库 API (ZTOOLS/ 命名空间) ====================
-    ipcMain.handle('internal:db-put', async (event, key: string, value: any) => {
+    ipcMain.handle('internal:db-put', (event, key: string, value: any) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:db-put')
       }
-      return await databaseAPI.dbPut(key, value)
+      return databaseAPI.dbPut(key, value)
     })
 
-    ipcMain.handle('internal:db-get', async (event, key: string) => {
+    ipcMain.handle('internal:db-get', (event, key: string) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:db-get')
       }
-      return await databaseAPI.dbGet(key)
+      return databaseAPI.dbGet(key)
     })
 
     // ==================== 应用启动 API ====================
@@ -271,7 +271,7 @@ export class InternalPluginAPI {
         throw new PermissionDeniedError('internal:ai-models-get-all')
       }
       try {
-        const models = await (aiModelsAPI as any).getAllModels()
+        const models = (aiModelsAPI as any).getAllModels()
         return { success: true, data: models }
       } catch (error: unknown) {
         return {
@@ -309,7 +309,7 @@ export class InternalPluginAPI {
         if (!requireInternalPlugin(this.pluginManager, event)) {
           throw new PermissionDeniedError('internal:register-global-shortcut')
         }
-        return await (settingsAPI as any).registerGlobalShortcut(shortcut, target)
+        return (settingsAPI as any).registerGlobalShortcut(shortcut, target)
       }
     )
 
@@ -317,7 +317,7 @@ export class InternalPluginAPI {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:unregister-global-shortcut')
       }
-      return await (settingsAPI as any).unregisterGlobalShortcut(shortcut)
+      return (settingsAPI as any).unregisterGlobalShortcut(shortcut)
     })
 
     ipcMain.handle('internal:start-hotkey-recording', async (event) => {
@@ -341,7 +341,7 @@ export class InternalPluginAPI {
         if (!requireInternalPlugin(this.pluginManager, event)) {
           throw new PermissionDeniedError('internal:register-app-shortcut')
         }
-        return await (settingsAPI as any).registerAppShortcut(shortcut, target)
+        return (settingsAPI as any).registerAppShortcut(shortcut, target)
       }
     )
 
@@ -349,7 +349,7 @@ export class InternalPluginAPI {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:unregister-app-shortcut')
       }
-      return await (settingsAPI as any).unregisterAppShortcut(shortcut)
+      return (settingsAPI as any).unregisterAppShortcut(shortcut)
     })
 
     // ==================== 系统设置 API ====================
@@ -560,7 +560,7 @@ export class InternalPluginAPI {
         // 广播到主渲染进程
         this.mainWindow?.webContents.send('update-floating-ball-double-click-command', command)
         // 同步更新 floatingBallManager 的双击命令，使其立即生效
-        await floatingBallManager.setDoubleClickCommand(command)
+        floatingBallManager.setDoubleClickCommand(command)
         return { success: true }
       }
     )
@@ -571,7 +571,7 @@ export class InternalPluginAPI {
         throw new PermissionDeniedError('internal:update-local-app-search')
       }
       // 更新 commandsAPI 中的配置
-      await (commandsAPI as any).setLocalAppSearch(enabled)
+      (commandsAPI as any).setLocalAppSearch(enabled)
       return { success: true }
     })
 
@@ -666,7 +666,7 @@ export class InternalPluginAPI {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:pin-app')
       }
-      return await (commandsAPI as any).pinApp(app)
+      return (commandsAPI as any).pinApp(app)
     })
 
     // 取消固定指令
@@ -676,7 +676,7 @@ export class InternalPluginAPI {
         if (!requireInternalPlugin(this.pluginManager, event)) {
           throw new PermissionDeniedError('internal:unpin-app')
         }
-        return await (commandsAPI as any).unpinApp(appPath, featureCode, name)
+        return (commandsAPI as any).unpinApp(appPath, featureCode, name)
       }
     )
 
@@ -714,7 +714,7 @@ export class InternalPluginAPI {
         throw new PermissionDeniedError('internal:web-search-get-all')
       }
       try {
-        const engines = await (webSearchAPI as any).getAllEngines()
+        const engines = (webSearchAPI as any).getAllEngines()
         return { success: true, data: engines }
       } catch (error: unknown) {
         return {

@@ -60,7 +60,7 @@ export class SettingsAPI {
   // 加载并应用设置
   private async loadAndApplySettings(): Promise<void> {
     try {
-      const data = await databaseAPI.dbGet('settings-general')
+      const data = databaseAPI.dbGet('settings-general')
       console.log('[Settings] 加载到的设置:', data)
       if (data) {
         // 应用透明度设置
@@ -119,12 +119,12 @@ export class SettingsAPI {
   // 加载并注册全局快捷键
   private async loadAndRegisterGlobalShortcuts(): Promise<void> {
     try {
-      const shortcuts = await databaseAPI.dbGet('global-shortcuts')
+      const shortcuts = databaseAPI.dbGet('global-shortcuts')
       if (shortcuts && Array.isArray(shortcuts)) {
         for (const shortcut of shortcuts) {
           if (shortcut.enabled && shortcut.shortcut && shortcut.target) {
             try {
-              await this.registerGlobalShortcut(shortcut.shortcut, shortcut.target)
+              this.registerGlobalShortcut(shortcut.shortcut, shortcut.target)
             } catch (error) {
               console.error(`注册全局快捷键失败: ${shortcut.shortcut}`, error)
             }
@@ -139,12 +139,12 @@ export class SettingsAPI {
   // 加载并注册应用快捷键
   private async loadAndRegisterAppShortcuts(): Promise<void> {
     try {
-      const shortcuts = await databaseAPI.dbGet('app-shortcuts')
+      const shortcuts = databaseAPI.dbGet('app-shortcuts')
       if (shortcuts && Array.isArray(shortcuts)) {
         for (const shortcut of shortcuts) {
           if (shortcut.enabled && shortcut.shortcut && shortcut.target) {
             try {
-              await this.registerAppShortcut(shortcut.shortcut, shortcut.target)
+              this.registerAppShortcut(shortcut.shortcut, shortcut.target)
             } catch (error) {
               console.error(`注册应用快捷键失败: ${shortcut.shortcut}`, error)
             }
@@ -213,7 +213,7 @@ export class SettingsAPI {
   }
 
   // 注册全局快捷键
-  private async registerGlobalShortcut(shortcut: string, target: string): Promise<any> {
+  private registerGlobalShortcut(shortcut: string, target: string): any {
     try {
       if (this.isDoubleTapShortcut(shortcut)) {
         const modifier = this.getDoubleTapModifier(shortcut)
@@ -247,7 +247,7 @@ export class SettingsAPI {
   }
 
   // 注销全局快捷键
-  private async unregisterGlobalShortcut(shortcut: string): Promise<any> {
+  private unregisterGlobalShortcut(shortcut: string): any {
     try {
       if (this.isDoubleTapShortcut(shortcut)) {
         const modifier = this.getDoubleTapModifier(shortcut)
@@ -380,7 +380,7 @@ export class SettingsAPI {
   }
 
   // 注册应用快捷键
-  private async registerAppShortcut(shortcut: string, target: string): Promise<any> {
+  private registerAppShortcut(shortcut: string, target: string): any {
     try {
       const success = windowManager.registerAppShortcut(shortcut, target)
       if (!success) {
@@ -395,7 +395,7 @@ export class SettingsAPI {
   }
 
   // 注销应用快捷键
-  private async unregisterAppShortcut(shortcut: string): Promise<any> {
+  private unregisterAppShortcut(shortcut: string): any {
     try {
       windowManager.unregisterAppShortcut(shortcut)
       console.log(`成功注销应用快捷键: ${shortcut}`)

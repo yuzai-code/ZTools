@@ -330,6 +330,18 @@ class PluginWindowManager {
   }
 
   /**
+   * 检查指定插件是否有打开的窗口
+   */
+  public hasWindowsByPlugin(pluginPath: string): boolean {
+    for (const windowInfo of Array.from(this.windowInfoMap.values())) {
+      if (windowInfo.pluginPath === pluginPath && !windowInfo.window.isDestroyed()) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
    * 检查 WebContents 是否属于 browser 窗口
    */
   public isBrowserWindow(webContents: Electron.WebContents): boolean {

@@ -51,13 +51,9 @@ export class AppsAPI {
     this.mainWindow = mainWindow
     this.pluginManager = pluginManager
     this.setupIPC()
-    this.loadLastMatchState().catch((error) => {
-      console.error('[Commands] 加载上次匹配状态失败:', error)
-    })
+    this.loadLastMatchState()
     // 异步加载本地应用搜索设置
-    this.loadLocalAppSearchSetting().catch((error) => {
-      console.error('[Commands] 加载本地应用搜索设置失败:', error)
-    })
+    this.loadLocalAppSearchSetting()
   }
 
   public getLaunchParam(): any {
@@ -108,7 +104,7 @@ export class AppsAPI {
   /**
    * 设置本地应用搜索开启状态
    */
-  public async setLocalAppSearch(enabled: boolean): Promise<void> {
+  public setLocalAppSearch(enabled: boolean): void {
     this.isLocalAppSearchEnabled = enabled
     this.cachedCommandsResult = null
     console.log('[Commands] 本地应用搜索已' + (enabled ? '开启' : '关闭'))
@@ -120,9 +116,9 @@ export class AppsAPI {
   /**
    * 加载本地应用搜索设置
    */
-  private async loadLocalAppSearchSetting(): Promise<void> {
+  private loadLocalAppSearchSetting(): void {
     try {
-      const data = await databaseAPI.dbGet('settings-general')
+      const data = databaseAPI.dbGet('settings-general')
       if (data && typeof data.localAppSearch === 'boolean') {
         this.isLocalAppSearchEnabled = data.localAppSearch
       }
@@ -135,9 +131,9 @@ export class AppsAPI {
   /**
    * 获取使用统计
    */
-  private async getUsageStats(): Promise<any[]> {
+  private getUsageStats(): any[] {
     try {
-      const stats = await databaseAPI.dbGet('command-usage-stats')
+      const stats = databaseAPI.dbGet('command-usage-stats')
       return stats || []
     } catch (error) {
       console.error('[Commands] 获取使用统计失败:', error)
@@ -166,7 +162,7 @@ export class AppsAPI {
 
     // 尝试从数据库缓存读取
     try {
-      const cachedApps = await databaseAPI.dbGet('cached-commands')
+      const cachedApps = databaseAPI.dbGet('cached-commands')
       if (cachedApps && Array.isArray(cachedApps) && cachedApps.length > 0) {
         // 检查缓存的图标格式是否为新协议
         // 只要有一个应用使用了旧的文件路径格式（且不是 .png 结尾的静态资源），就视为旧缓存
@@ -240,7 +236,7 @@ export class AppsAPI {
 
     // 保存到数据库缓存
     try {
-      await databaseAPI.dbPut('cached-commands', apps)
+      databaseAPI.dbPut('cached-commands', apps)
       console.log('[Commands] 应用列表已缓存到数据库')
     } catch (error) {
       console.error('[Commands] 缓存应用列表失败:', error)
@@ -333,10 +329,10 @@ export class AppsAPI {
             }
             console.log('[Commands] 保存上次匹配状态:', this.lastMatchState)
             // 持久化到数据库
-            await this.saveLastMatchState()
+            this.saveLastMatchState()
 
             // 先删除历史记录中旧的"上次匹配"
-            await this.removeFromHistory('special:last-match')
+            this.removeFromHistory('special:last-match')
 
             // 将"上次匹配"作为普通指令加入历史记录
             this.addToHistory({
@@ -379,7 +375,7 @@ export class AppsAPI {
           let shouldAutoDetach = false
           if (pluginConfig) {
             try {
-              const autoDetachPlugins = await databaseAPI.dbGet('autoDetachPlugin')
+              const autoDetachPlugins = databaseAPI.dbGet('autoDetachPlugin')
               if (
                 autoDetachPlugins &&
                 Array.isArray(autoDetachPlugins) &&
@@ -426,7 +422,7 @@ export class AppsAPI {
       } else {
         // 直接启动（app / system-setting / local-shortcut / UWP / 协议链接）
         // 检查是否为本地启动项（需要 shell.openPath 而非 launchApp）
-        const localShortcuts = await databaseAPI.dbGet('local-shortcuts')
+        const localShortcuts = databaseAPI.dbGet('local-shortcuts')
         const isLocalShortcut = localShortcuts?.some((s: any) => s.path === appPath)
 
         if (isLocalShortcut) {
@@ -456,7 +452,7 @@ export class AppsAPI {
   /**
    * 以管理员身份启动应用（仅 Windows）
    */
-  private async launchAsAdmin(appPath: string, name?: string): Promise<void> {
+  private launchAsAdmin(appPath: string, name?: string): void {
     if (process.platform !== 'win32') {
       throw new Error('仅支持 Windows 平台')
     }
@@ -533,7 +529,7 @@ export class AppsAPI {
       // 特殊指令和内置指令不需要查找应用信息，前端会处理显示
       if (appPath.startsWith('special:') || appPath.startsWith('builtin:')) {
         // 尝试从缓存的应用列表中获取完整信息（包括图标）
-        const cachedApps = await databaseAPI.dbGet('cached-commands')
+        const cachedApps = databaseAPI.dbGet('cached-commands')
         const cachedBuiltin = cachedApps?.find((a: any) => a.path === appPath)
 
         appInfo = {
@@ -545,7 +541,7 @@ export class AppsAPI {
         }
       } else if (type === 'plugin') {
         // 从插件列表中查找
-        const dbPlugins = await this.getPluginsFromDB()
+        const dbPlugins = this.getPluginsFromDB()
 
         // 先从运行中的插件查找
         const plugin = dbPlugins.find((p: any) => p.path === appPath)
@@ -590,7 +586,7 @@ export class AppsAPI {
         }
       } else {
         // 从系统应用列表中查找
-        const cachedApps = await databaseAPI.dbGet('cached-commands')
+        const cachedApps = databaseAPI.dbGet('cached-commands')
         const app = cachedApps?.find((a: any) => a.path === appPath)
 
         if (app) {
@@ -621,7 +617,7 @@ export class AppsAPI {
 
         // 如果仍未找到，尝试从本地启动项中查找
         if (!appInfo) {
-          const localShortcuts = await databaseAPI.dbGet('local-shortcuts')
+          const localShortcuts = databaseAPI.dbGet('local-shortcuts')
           const shortcut = localShortcuts?.find((s: any) => s.path === appPath)
           if (shortcut) {
             appInfo = {
@@ -643,7 +639,7 @@ export class AppsAPI {
       }
 
       // 读取历史记录
-      let history: any[] = (await databaseAPI.dbGet('command-history')) || []
+      let history: any[] = databaseAPI.dbGet('command-history') || []
 
       // 查找是否已存在（非插件类型需要同时匹配 name 和 path，支持同路径不同名应用）
       const existingIndex = findCommandIndex(history, appPath, type, featureCode, appInfo.name)
@@ -673,7 +669,7 @@ export class AppsAPI {
       }
 
       // 保存历史记录
-      await databaseAPI.dbPut('command-history', history)
+      databaseAPI.dbPut('command-history', history)
 
       console.log('[Commands] 历史记录已更新:', appInfo.name)
 
@@ -687,12 +683,12 @@ export class AppsAPI {
   /**
    * 更新指令使用统计（独立于历史记录，用于匹配推荐排序）
    */
-  private async updateUsageStats(options: {
+  private updateUsageStats(options: {
     path: string
     type?: 'app' | 'plugin'
     featureCode?: string
     name?: string
-  }): Promise<void> {
+  }): void {
     try {
       const { path: cmdPath, type = 'app', featureCode, name: cmdName } = options
 
@@ -701,7 +697,7 @@ export class AppsAPI {
       const now = Date.now()
 
       // 读取使用统计
-      const stats: any[] = (await databaseAPI.dbGet('command-usage-stats')) || []
+      const stats: any[] = databaseAPI.dbGet('command-usage-stats') || []
 
       // 查找是否已存在（非插件类型需要同时匹配 name 和 path，支持同路径不同名应用）
       const existingIndex = findCommandIndex(stats, cmdPath, type, featureCode, cmdName || cmdPath)
@@ -725,7 +721,7 @@ export class AppsAPI {
       }
 
       // 保存统计数据
-      await databaseAPI.dbPut('command-usage-stats', stats)
+      databaseAPI.dbPut('command-usage-stats', stats)
 
       console.log('[Commands] 使用统计已更新')
     } catch (error) {
@@ -736,9 +732,9 @@ export class AppsAPI {
   /**
    * 从数据库获取插件列表
    */
-  private async getPluginsFromDB(): Promise<any[]> {
+  private getPluginsFromDB(): any[] {
     try {
-      const plugins = await databaseAPI.dbGet('plugins')
+      const plugins = databaseAPI.dbGet('plugins')
       return plugins || []
     } catch (error) {
       console.error('[Commands] 从数据库获取插件列表失败:', error)
@@ -802,18 +798,18 @@ export class AppsAPI {
   /**
    * 从历史记录中删除
    */
-  private async removeFromHistory(
+  private removeFromHistory(
     appPath: string,
     featureCode?: string,
     name?: string
-  ): Promise<void> {
+  ): void {
     try {
-      const originalHistory: any[] = (await databaseAPI.dbGet('command-history')) || []
+      const originalHistory: any[] = databaseAPI.dbGet('command-history') || []
 
       // 过滤掉要删除的项（非插件类型需要同时匹配 name 和 path，支持同路径不同名应用）
       const history = filterOutCommand(originalHistory, appPath, featureCode, name)
 
-      await databaseAPI.dbPut('command-history', history)
+      databaseAPI.dbPut('command-history', history)
       console.log('[Commands] 已从历史记录删除:', appPath, featureCode)
 
       // 通知前端重新加载历史记录
@@ -826,9 +822,9 @@ export class AppsAPI {
   /**
    * 固定应用
    */
-  private async pinApp(app: any): Promise<void> {
+  private pinApp(app: any): void {
     try {
-      const pinnedApps: any[] = (await databaseAPI.dbGet('pinned-commands')) || []
+      const pinnedApps: any[] = databaseAPI.dbGet('pinned-commands') || []
 
       // 检查是否已固定（非插件类型需要同时匹配 name 和 path，支持同路径不同名应用）
       const exists = hasCommand(pinnedApps, app.path, app.featureCode, app.name)
@@ -851,7 +847,7 @@ export class AppsAPI {
         pluginName: app.pluginName
       })
 
-      await databaseAPI.dbPut('pinned-commands', pinnedApps)
+      databaseAPI.dbPut('pinned-commands', pinnedApps)
       console.log('[Commands] 已固定应用:', app.name)
 
       // 通知前端重新加载固定列表
@@ -864,14 +860,14 @@ export class AppsAPI {
   /**
    * 取消固定
    */
-  private async unpinApp(appPath: string, featureCode?: string, name?: string): Promise<void> {
+  private unpinApp(appPath: string, featureCode?: string, name?: string): void {
     try {
-      const originalPinnedApps: any[] = (await databaseAPI.dbGet('pinned-commands')) || []
+      const originalPinnedApps: any[] = databaseAPI.dbGet('pinned-commands') || []
 
       // 过滤掉要删除的项（非插件类型需要同时匹配 name 和 path，支持同路径不同名应用）
       const pinnedApps = filterOutCommand(originalPinnedApps, appPath, featureCode, name)
 
-      await databaseAPI.dbPut('pinned-commands', pinnedApps)
+      databaseAPI.dbPut('pinned-commands', pinnedApps)
       console.log('[Commands] 已取消固定:', appPath, featureCode)
 
       // 通知前端重新加载固定列表
@@ -884,7 +880,7 @@ export class AppsAPI {
   /**
    * 更新固定列表顺序
    */
-  private async updatePinnedOrder(newOrder: any[]): Promise<void> {
+  private updatePinnedOrder(newOrder: any[]): void {
     try {
       // 清理数据，只保存必要字段
       const cleanData = newOrder.map((app) => ({
@@ -898,7 +894,7 @@ export class AppsAPI {
         pinyinAbbr: app.pinyinAbbr
       }))
 
-      await databaseAPI.dbPut('pinned-commands', cleanData)
+      databaseAPI.dbPut('pinned-commands', cleanData)
       console.log('[Commands] 固定列表顺序已更新')
 
       // 通知前端重新加载固定列表
@@ -911,9 +907,9 @@ export class AppsAPI {
   /**
    * 从数据库加载上次匹配状态
    */
-  private async loadLastMatchState(): Promise<void> {
+  private loadLastMatchState(): void {
     try {
-      const state = await databaseAPI.dbGet('last-match-state')
+      const state = databaseAPI.dbGet('last-match-state')
       if (state) {
         this.lastMatchState = state
         console.log('[Commands] 加载上次匹配状态:', state)
@@ -926,10 +922,10 @@ export class AppsAPI {
   /**
    * 保存上次匹配状态到数据库
    */
-  private async saveLastMatchState(): Promise<void> {
+  private saveLastMatchState(): void {
     try {
       if (this.lastMatchState) {
-        await databaseAPI.dbPut('last-match-state', this.lastMatchState)
+        databaseAPI.dbPut('last-match-state', this.lastMatchState)
         console.log('[Commands] 保存上次匹配状态到数据库')
       }
     } catch (error) {
@@ -1000,7 +996,7 @@ export class AppsAPI {
 
       // 处理本地启动项
       try {
-        const localShortcuts = await databaseAPI.dbGet('local-shortcuts')
+        const localShortcuts = databaseAPI.dbGet('local-shortcuts')
         if (localShortcuts && Array.isArray(localShortcuts)) {
           for (const shortcut of localShortcuts) {
             commands.push({

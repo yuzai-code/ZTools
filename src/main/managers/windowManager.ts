@@ -105,7 +105,7 @@ class WindowManager {
   /**
    * 创建主窗口
    */
-  public async createWindow(): Promise<BrowserWindow> {
+  public createWindow(): BrowserWindow {
     // 智能检测：在鼠标所在的显示器上打开窗口
     const { width, height, x: displayX, y: displayY } = this.getDisplayAtCursor()
 
@@ -816,9 +816,9 @@ class WindowManager {
   /**
    * 从设置中应用窗口材质（启动时调用）
    */
-  private async applyWindowMaterialFromSettings(): Promise<void> {
+  private applyWindowMaterialFromSettings(): void {
     try {
-      const settings = await databaseAPI.dbGet('settings-general')
+      const settings = databaseAPI.dbGet('settings-general')
       const savedMaterial = settings?.windowMaterial as WindowMaterial | undefined
       const material = savedMaterial || getDefaultWindowMaterial()
 
@@ -831,7 +831,7 @@ class WindowManager {
           ...(settings || {}),
           windowMaterial: material
         }
-        await databaseAPI.dbPut('settings-general', updatedSettings)
+        databaseAPI.dbPut('settings-general', updatedSettings)
       }
 
       this.applyMaterial(material)
@@ -859,9 +859,9 @@ class WindowManager {
   /**
    * 获取当前窗口材质
    */
-  public async getWindowMaterial(): Promise<WindowMaterial> {
+  public getWindowMaterial(): WindowMaterial {
     try {
-      const settings = await databaseAPI.dbGet('settings-general')
+      const settings = databaseAPI.dbGet('settings-general')
       return (settings?.windowMaterial as WindowMaterial) || getDefaultWindowMaterial()
     } catch (error) {
       console.error('[Window] 获取窗口材质失败:', error)
@@ -895,7 +895,7 @@ class WindowManager {
 
     // 从数据库查找设置插件
     try {
-      const plugins: any = await api.dbGet('plugins')
+      const plugins: any = api.dbGet('plugins')
       if (!plugins || !Array.isArray(plugins)) {
         console.error('[Window] 未找到插件列表')
         return

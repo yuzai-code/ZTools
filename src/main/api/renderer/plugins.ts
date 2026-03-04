@@ -132,7 +132,7 @@ export class PluginsAPI {
   // 获取所有插件列表（包括 system 插件，用于生成搜索指令）
   public async getAllPlugins(): Promise<any[]> {
     try {
-      const data = await databaseAPI.dbGet('plugins')
+      const data = databaseAPI.dbGet('plugins')
       const plugins = data || []
 
       // 合并动态 features 和网页快开搜索引擎
@@ -174,10 +174,10 @@ export class PluginsAPI {
    * @param existingPlugins 已存在的插件列表
    * @returns 验证结果 { valid: boolean, error?: string }
    */
-  private async validatePluginConfig(
+  private validatePluginConfig(
     pluginConfig: any,
     existingPlugins: any[]
-  ): Promise<{ valid: boolean; error?: string }> {
+  ): { valid: boolean; error?: string } {
     // 检查 title 是否冲突（如果有 title 字段）
     if (pluginConfig.title) {
       const titleConflict = existingPlugins.find((p: any) => p.title === pluginConfig.title)
@@ -302,7 +302,7 @@ export class PluginsAPI {
       }
 
       // 验证插件配置
-      const validation = await this.validatePluginConfig(pluginConfig, existingPlugins)
+      const validation = this.validatePluginConfig(pluginConfig, existingPlugins)
       if (!validation.valid) {
         return { success: false, error: validation.error }
       }
@@ -327,10 +327,10 @@ export class PluginsAPI {
         installedAt: new Date().toISOString()
       }
 
-      let plugins: any = await databaseAPI.dbGet('plugins')
+      let plugins: any = databaseAPI.dbGet('plugins')
       if (!plugins) plugins = []
       plugins.push(pluginInfo)
-      await databaseAPI.dbPut('plugins', plugins)
+      databaseAPI.dbPut('plugins', plugins)
 
       // 输出新增的指令
       console.log('[Plugins] \n=== 新增插件指令 ===')
@@ -459,7 +459,7 @@ export class PluginsAPI {
       const pluginPath = path.join(PLUGIN_DIR, pluginName)
 
       // 检查是否已存在，如果存在则先删除旧版本（覆盖安装）
-      const existingPlugins: any[] = (await databaseAPI.dbGet('plugins')) || []
+      const existingPlugins: any[] = databaseAPI.dbGet('plugins') || []
       const existingIndex = existingPlugins.findIndex((p: any) => p.name === pluginName)
 
       if (existingIndex !== -1) {
@@ -474,7 +474,7 @@ export class PluginsAPI {
 
         // 从数据库中移除旧记录
         existingPlugins.splice(existingIndex, 1)
-        await databaseAPI.dbPut('plugins', existingPlugins)
+        databaseAPI.dbPut('plugins', existingPlugins)
 
         // 删除旧目录
         try {
@@ -538,7 +538,7 @@ export class PluginsAPI {
       }
 
       // 验证插件配置
-      const validation = await this.validatePluginConfig(pluginConfig, existingPlugins)
+      const validation = this.validatePluginConfig(pluginConfig, existingPlugins)
       if (!validation.valid) {
         return { success: false, error: validation.error }
       }
@@ -559,10 +559,10 @@ export class PluginsAPI {
         installedAt: new Date().toISOString()
       }
 
-      let plugins: any = await databaseAPI.dbGet('plugins')
+      let plugins: any = databaseAPI.dbGet('plugins')
       if (!plugins) plugins = []
       plugins.push(pluginInfo)
-      await databaseAPI.dbPut('plugins', plugins)
+      databaseAPI.dbPut('plugins', plugins)
 
       // 输出新增的指令
       console.log('[Plugins] \n=== 新增开发中插件指令 ===')
@@ -603,7 +603,7 @@ export class PluginsAPI {
   // 删除插件
   private async deletePlugin(pluginPath: string): Promise<any> {
     try {
-      const plugins: any = await databaseAPI.dbGet('plugins')
+      const plugins: any = databaseAPI.dbGet('plugins')
       if (!plugins || !Array.isArray(plugins)) {
         return { success: false, error: '插件列表不存在' }
       }
@@ -624,7 +624,7 @@ export class PluginsAPI {
       }
 
       plugins.splice(pluginIndex, 1)
-      await databaseAPI.dbPut('plugins', plugins)
+      databaseAPI.dbPut('plugins', plugins)
 
       this.mainWindow?.webContents.send('plugins-changed')
 
@@ -649,7 +649,7 @@ export class PluginsAPI {
   // 重载插件
   private async reloadPlugin(pluginPath: string): Promise<any> {
     try {
-      const plugins: any = await databaseAPI.dbGet('plugins')
+      const plugins: any = databaseAPI.dbGet('plugins')
       if (!plugins || !Array.isArray(plugins)) {
         return { success: false, error: '插件列表不存在' }
       }
@@ -687,7 +687,7 @@ export class PluginsAPI {
         main: pluginConfig.main || oldPlugin.main
       }
 
-      await databaseAPI.dbPut('plugins', plugins)
+      databaseAPI.dbPut('plugins', plugins)
       this.mainWindow?.webContents.send('plugins-changed')
       console.log('[Plugins] 插件重载成功:', pluginPath)
       return { success: true }
@@ -749,7 +749,7 @@ export class PluginsAPI {
   private async fetchPluginMarket(): Promise<any> {
     try {
       // 读取设置，检查是否有自定义插件市场 URL
-      const settings = await databaseAPI.dbGet('settings-general')
+      const settings = databaseAPI.dbGet('settings-general')
       const defaultBaseUrl = 'https://github.com/ZToolsCenter/ZTools-plugins/releases/latest/download'
       let baseUrl = defaultBaseUrl
 
@@ -778,8 +778,8 @@ export class PluginsAPI {
       }
 
       // 检查缓存
-      const cachedVersion = await databaseAPI.dbGet('plugin-market-version')
-      const cachedData = await databaseAPI.dbGet('plugin-market-data')
+      const cachedVersion = databaseAPI.dbGet('plugin-market-version')
+      const cachedData = databaseAPI.dbGet('plugin-market-data')
 
       if (cachedVersion === latestVersion && cachedData && latestVersion) {
         console.log('[Plugins] 使用本地缓存的插件市场列表')
@@ -792,14 +792,14 @@ export class PluginsAPI {
       const json = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
 
       // 保存到缓存
-      await databaseAPI.dbPut('plugin-market-version', latestVersion)
-      await databaseAPI.dbPut('plugin-market-data', json)
+      databaseAPI.dbPut('plugin-market-version', latestVersion)
+      databaseAPI.dbPut('plugin-market-data', json)
 
       return { success: true, data: json }
     } catch (error: unknown) {
       console.error('[Plugins] 获取插件市场列表失败:', error)
       try {
-        const cachedData = await databaseAPI.dbGet('plugin-market-data')
+        const cachedData = databaseAPI.dbGet('plugin-market-data')
         if (cachedData) {
           console.log('[Plugins] 获取失败，降级使用本地缓存')
           return { success: true, data: cachedData }
@@ -861,7 +861,7 @@ export class PluginsAPI {
   public async packagePlugin(pluginPath: string): Promise<{ success: boolean; error?: string }> {
     try {
       // 查找插件信息
-      const plugins: any = await databaseAPI.dbGet('plugins')
+      const plugins: any = databaseAPI.dbGet('plugins')
       if (!plugins || !Array.isArray(plugins)) {
         return { success: false, error: '插件列表不存在' }
       }
@@ -1054,9 +1054,9 @@ export class PluginsAPI {
   }
 
   // 获取插件存储的数据库数据
-  private async getPluginDbData(
+  private getPluginDbData(
     pluginName: string
-  ): Promise<{ success: boolean; data?: any; error?: string }> {
+  ): { success: boolean; data?: any; error?: string } {
     try {
       // 获取以插件名为前缀的所有数据
       const prefix = `PLUGIN/${pluginName}/`
@@ -1188,7 +1188,7 @@ export class PluginsAPI {
       const targetPath = path.join(PLUGIN_DIR, pluginName)
 
       // 8. 检查是否已安装（覆盖安装逻辑）
-      const existingPlugins: any[] = (await databaseAPI.dbGet('plugins')) || []
+      const existingPlugins: any[] = databaseAPI.dbGet('plugins') || []
       const existingIndex = existingPlugins.findIndex((p: any) => p.name === pluginName)
 
       if (existingIndex !== -1) {
@@ -1203,7 +1203,7 @@ export class PluginsAPI {
 
         // 从数据库中移除旧记录
         existingPlugins.splice(existingIndex, 1)
-        await databaseAPI.dbPut('plugins', existingPlugins)
+        databaseAPI.dbPut('plugins', existingPlugins)
 
         // 删除旧目录
         try {
@@ -1221,7 +1221,7 @@ export class PluginsAPI {
       console.log('[Plugins] 插件已安装到:', targetPath)
 
       // 10. 验证插件配置
-      const validation = await this.validatePluginConfig(pluginConfig, existingPlugins)
+      const validation = this.validatePluginConfig(pluginConfig, existingPlugins)
       if (!validation.valid) {
         // 安装失败，清理目录
         await fs.rm(targetPath, { recursive: true, force: true })
@@ -1247,10 +1247,10 @@ export class PluginsAPI {
         installedFrom: 'npm'
       }
 
-      let plugins: any = await databaseAPI.dbGet('plugins')
+      let plugins: any = databaseAPI.dbGet('plugins')
       if (!plugins) plugins = []
       plugins.push(pluginInfo)
-      await databaseAPI.dbPut('plugins', plugins)
+      databaseAPI.dbPut('plugins', plugins)
 
       // 12. 清理临时文件
       try {

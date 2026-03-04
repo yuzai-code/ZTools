@@ -188,12 +188,12 @@ export function registerIconProtocolForSession(targetSession: Electron.Session):
   })
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   // 注册自定义图标协议到默认 session (ztools-icon://)
   registerIconProtocolForSession(session.defaultSession)
 
   // ✅ 首先加载内置插件
-  await loadInternalPlugins()
+  loadInternalPlugins()
 
   // 隐藏 Dock 图标（仅在没有分离窗口时隐藏）
   if (platform.isMacOS) {
@@ -203,7 +203,7 @@ app.whenReady().then(async () => {
   }
 
   // 创建主窗口
-  const mainWindow = await windowManager.createWindow()
+  const mainWindow = windowManager.createWindow()
 
   // 初始化 API 和插件管理器
   if (mainWindow) {
@@ -225,9 +225,9 @@ app.whenReady().then(async () => {
   // 自动启动已配置的"跟随主程序同时启动运行"的插件
   if (mainWindow) {
     try {
-      const autoStartPlugins = await api.dbGet('autoStartPlugin')
+      const autoStartPlugins = api.dbGet('autoStartPlugin')
       if (autoStartPlugins && Array.isArray(autoStartPlugins) && autoStartPlugins.length > 0) {
-        const plugins = await api.dbGet('plugins')
+        const plugins = api.dbGet('plugins')
         if (plugins && Array.isArray(plugins)) {
           for (const pluginName of autoStartPlugins) {
             const plugin = plugins.find((p: any) => p.name === pluginName)
@@ -274,9 +274,9 @@ app.on('before-quit', (event) => {
   }
 })
 
-app.on('activate', async () => {
+app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    await windowManager.createWindow()
+    windowManager.createWindow()
   }
 })
 

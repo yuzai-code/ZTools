@@ -7,9 +7,9 @@ export type DevToolsMode = 'right' | 'bottom' | 'undocked' | 'detach'
 /**
  * 从数据库读取开发者工具默认位置配置
  */
-export async function getDevToolsMode(): Promise<DevToolsMode> {
+export function getDevToolsMode(): DevToolsMode {
   try {
-    const data = await databaseAPI.dbGet('settings-general')
+    const data = databaseAPI.dbGet('settings-general')
     return (data?.devToolsMode as DevToolsMode) || 'detach'
   } catch {
     return 'detach'
@@ -47,7 +47,7 @@ class DevToolsShortcutManager {
         if (this.currentTarget.isDevToolsOpened()) {
           this.currentTarget.closeDevTools()
         } else {
-          const mode = await getDevToolsMode()
+          const mode = getDevToolsMode()
           this.currentTarget.openDevTools({ mode })
         }
       }

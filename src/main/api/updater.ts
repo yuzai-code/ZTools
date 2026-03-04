@@ -60,10 +60,10 @@ export class UpdaterAPI {
   /**
    * 启动自动检查（30分钟一次）
    */
-  private async startAutoCheck(): Promise<void> {
+  private startAutoCheck(): void {
     try {
       // 获取设置
-      const settings = await databaseAPI.dbGet('settings-general')
+      const settings = databaseAPI.dbGet('settings-general')
       const autoCheck = settings?.autoCheckUpdate ?? true // 默认开启
 
       if (!autoCheck) {
@@ -473,9 +473,9 @@ export class UpdaterAPI {
   /**
    * 应用窗口材质到 Update 窗口
    */
-  private async applyMaterialToUpdateWindow(win: BrowserWindow): Promise<void> {
+  private applyMaterialToUpdateWindow(win: BrowserWindow): void {
     try {
-      const settings = await databaseAPI.dbGet('settings-general')
+      const settings = databaseAPI.dbGet('settings-general')
       const material = settings?.windowMaterial || getDefaultWindowMaterial()
       applyWindowMaterial(win, material)
     } catch (error) {

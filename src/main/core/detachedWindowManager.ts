@@ -58,11 +58,11 @@ class DetachedWindowManager {
   /**
    * 将分离窗口尺寸持久化到数据库（按插件名归档）
    */
-  private async persistWindowSize(
+  private persistWindowSize(
     pluginName: string,
     width: number,
     viewHeight: number
-  ): Promise<void> {
+  ): void {
     try {
       const normalizedWidth = Math.max(MIN_WINDOW_WIDTH, Math.round(width))
       const normalizedHeight = Math.max(MIN_VIEW_HEIGHT, Math.round(viewHeight))
@@ -76,7 +76,7 @@ class DetachedWindowManager {
         return
       }
 
-      const existing = (await databaseAPI.dbGet('detachedWindowSizes')) || {}
+      const existing = databaseAPI.dbGet('detachedWindowSizes') || {}
       const next = {
         ...(typeof existing === 'object' && existing !== null ? existing : {}),
         [pluginName]: {
@@ -85,7 +85,7 @@ class DetachedWindowManager {
         }
       }
 
-      await databaseAPI.dbPut('detachedWindowSizes', next)
+      databaseAPI.dbPut('detachedWindowSizes', next)
       this.lastSavedSizeByPlugin.set(pluginName, {
         width: normalizedWidth,
         height: normalizedHeight
@@ -110,9 +110,7 @@ class DetachedWindowManager {
     }
 
     const timer = setTimeout(() => {
-      this.persistWindowSize(pluginName, width, viewHeight).catch((error) => {
-        console.error('[DetachedWindow] 保存分离窗口尺寸时出错:', error)
-      })
+      this.persistWindowSize(pluginName, width, viewHeight)
       this.resizeSaveTimers.delete(windowId)
     }, 300)
 
@@ -374,11 +372,10 @@ class DetachedWindowManager {
             if (pluginView.webContents.isDevToolsOpened()) {
               pluginView.webContents.closeDevTools()
             } else {
-              getDevToolsMode().then((mode) => {
-                if (!pluginView.webContents.isDestroyed()) {
-                  pluginView.webContents.openDevTools({ mode })
-                }
-              })
+              const mode = getDevToolsMode()
+              if (!pluginView.webContents.isDestroyed()) {
+                pluginView.webContents.openDevTools({ mode })
+              }
             }
           }
           break
@@ -413,10 +410,10 @@ class DetachedWindowManager {
       }
     }
 
-    const handleShowPluginMenu = async (
+    const handleShowPluginMenu = (
       _event: Electron.IpcMainEvent,
       menuItems: any[]
-    ): Promise<void> => {
+    ): void => {
       // 验证事件来自这个窗口
       if (_event.sender.id !== win.webContents.id) return
 
@@ -546,7 +543,7 @@ class DetachedWindowManager {
   /**
    * 更新所有分离窗口的材质
    */
-  public async updateAllWindowsMaterial(material: 'mica' | 'acrylic' | 'none'): Promise<void> {
+  public updateAllWindowsMaterial(material: 'mica' | 'acrylic' | 'none'): void {
     for (const [windowId, info] of this.detachedWindowMap.entries()) {
       try {
         // 更新主进程窗口材质

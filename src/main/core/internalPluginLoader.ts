@@ -9,11 +9,11 @@ import { INTERNAL_PLUGIN_NAMES, getInternalPluginPath } from './internalPlugins'
  * 加载所有内置插件
  * 在应用启动时调用，自动将内置插件添加到数据库
  */
-export async function loadInternalPlugins(): Promise<void> {
+export function loadInternalPlugins(): void {
   console.log('[InternalPlugin] 开始加载内置插件...')
 
   const isDev = !app.isPackaged
-  const existingPlugins = (await api.dbGet('plugins')) || []
+  const existingPlugins = api.dbGet('plugins') || []
 
   // 移除旧的内置插件记录（基于名称判断）
   const filteredPlugins = existingPlugins.filter(
@@ -66,6 +66,6 @@ export async function loadInternalPlugins(): Promise<void> {
   }
 
   // 保存到数据库
-  await api.dbPut('plugins', filteredPlugins)
+  api.dbPut('plugins', filteredPlugins)
   console.log('[InternalPlugin] 内置插件加载完成')
 }

@@ -59,9 +59,9 @@ class SuperPanelManager {
   /**
    * 从数据库加载配置并启动监听
    */
-  private async loadConfig(): Promise<void> {
+  private loadConfig(): void {
     try {
-      const data = await databaseAPI.dbGet('settings-general')
+      const data = databaseAPI.dbGet('settings-general')
       if (data) {
         this.config = {
           enabled: data.superPanelEnabled ?? false,
@@ -405,9 +405,9 @@ class SuperPanelManager {
   /**
    * 从数据库读取材质设置并应用到指定窗口
    */
-  private async applyMaterialToWindow(win: BrowserWindow): Promise<void> {
+  private applyMaterialToWindow(win: BrowserWindow): void {
     try {
-      const settings = await databaseAPI.dbGet('settings-general')
+      const settings = databaseAPI.dbGet('settings-general')
       const material = settings?.windowMaterial || getDefaultWindowMaterial()
       applyWindowMaterial(win, material)
       // 通知超级面板渲染进程更新样式
@@ -463,10 +463,10 @@ class SuperPanelManager {
   /**
    * 加载固定列表
    */
-  private async loadPinnedCommands(): Promise<void> {
+  private loadPinnedCommands(): void {
     try {
       // 从数据库读取超级面板固定列表
-      let pinnedCommands = await databaseAPI.dbGet('super-panel-pinned')
+      let pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
 
       if (!pinnedCommands || !Array.isArray(pinnedCommands)) {
         pinnedCommands = []
@@ -585,9 +585,9 @@ class SuperPanelManager {
     })
 
     // 更新超级面板固定列表顺序
-    ipcMain.handle('super-panel:update-pinned-order', async (_event, commands: any[]) => {
+    ipcMain.handle('super-panel:update-pinned-order', (_event, commands: any[]) => {
       try {
-        await databaseAPI.dbPut('super-panel-pinned', commands)
+        databaseAPI.dbPut('super-panel-pinned', commands)
         return { success: true }
       } catch (error) {
         console.error('[SuperPanel] 更新超级面板固定列表顺序失败:', error)
@@ -601,10 +601,10 @@ class SuperPanelManager {
     // 取消固定命令
     ipcMain.handle(
       'super-panel:unpin-command',
-      async (_event, path: string, featureCode?: string) => {
+      (_event, path: string, featureCode?: string) => {
         try {
           console.log('[SuperPanel] 收到取消固定请求:', { path, featureCode })
-          let pinnedCommands = await databaseAPI.dbGet('super-panel-pinned')
+          let pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
           if (!Array.isArray(pinnedCommands)) {
             pinnedCommands = []
           }
@@ -618,7 +618,7 @@ class SuperPanelManager {
           })
 
           console.log('[SuperPanel] 更新后的固定列表:', pinnedCommands.length, '项')
-          await databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
+          databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
 
           // 重新加载固定列表
           this.loadPinnedCommands()
@@ -636,9 +636,9 @@ class SuperPanelManager {
     )
 
     // 固定命令到超级面板
-    ipcMain.handle('super-panel:pin-command', async (_event, command: any) => {
+    ipcMain.handle('super-panel:pin-command', (_event, command: any) => {
       try {
-        let pinnedCommands = await databaseAPI.dbGet('super-panel-pinned')
+        let pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
         if (!Array.isArray(pinnedCommands)) {
           pinnedCommands = []
         }
@@ -662,7 +662,7 @@ class SuperPanelManager {
             pluginExplain: command.pluginExplain || '',
             cmdType: command.cmdType || 'text'
           })
-          await databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
+          databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
           this.loadPinnedCommands()
         }
 
@@ -677,9 +677,9 @@ class SuperPanelManager {
     })
 
     // 获取超级面板固定列表
-    ipcMain.handle('super-panel:get-pinned', async () => {
+    ipcMain.handle('super-panel:get-pinned', () => {
       try {
-        const pinnedCommands = await databaseAPI.dbGet('super-panel-pinned')
+        const pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
         return Array.isArray(pinnedCommands) ? pinnedCommands : []
       } catch {
         return []
@@ -689,7 +689,7 @@ class SuperPanelManager {
     // 超级面板请求窗口匹配搜索 → 转发给主渲染进程
     ipcMain.handle(
       'super-panel:search-window-commands',
-      async (_event, windowInfo: { app?: string; title?: string }) => {
+      (_event, windowInfo: { app?: string; title?: string }) => {
         // 设置触发前的窗口信息到主窗口管理器
         if (this.currentWindowInfo) {
           windowManager.setPreviousActiveWindow(this.currentWindowInfo)

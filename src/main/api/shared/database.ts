@@ -330,14 +330,14 @@ export class DatabaseAPI {
     })
 
     // ============ 主程序渲染进程专用API（直接操作 ZTOOLS 命名空间） ============
-    ipcMain.handle('ztools:db-put', async (_event, key: string, data: any) => {
+    ipcMain.handle('ztools:db-put', (_event, key: string, data: any) => {
       // console.log('[Database] ztools:db-put', key, data)
-      return await this.dbPut(key, data)
+      return this.dbPut(key, data)
     })
 
-    ipcMain.handle('ztools:db-get', async (_event, key: string) => {
+    ipcMain.handle('ztools:db-get', (_event, key: string) => {
       console.log('[Database] ztools:db-get', key)
-      return await this.dbGet(key)
+      return this.dbGet(key)
     })
 
     // ============ 插件数据管理 API ============
@@ -366,7 +366,7 @@ export class DatabaseAPI {
    * 内部使用的数据库辅助方法
    * 用于主进程内部直接操作 ZTOOLS 命名空间的数据
    */
-  public async dbPut(key: string, data: any): Promise<any> {
+  public dbPut(key: string, data: any): any {
     try {
       const docId = `ZTOOLS/${key}`
 
@@ -377,22 +377,22 @@ export class DatabaseAPI {
       }
 
       // 获取现有文档以保留 _rev
-      const existing = await lmdbInstance.promises.get(docId)
+      const existing = lmdbInstance.get(docId)
       if (existing) {
         doc._rev = existing._rev
       }
 
-      return await lmdbInstance.promises.put(doc)
+      return lmdbInstance.put(doc)
     } catch (error) {
       console.error('[Database] dbPut 失败:', key, error)
       throw error
     }
   }
 
-  public async dbGet(key: string): Promise<any> {
+  public dbGet(key: string): any {
     try {
       const docId = `ZTOOLS/${key}`
-      const doc = await lmdbInstance.promises.get(docId)
+      const doc = lmdbInstance.get(docId)
 
       if (!doc) {
         return null

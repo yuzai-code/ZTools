@@ -35,9 +35,9 @@ export class PluginManager {
   /**
    * 从数据库查询插件信息
    */
-  private async fetchPluginInfoFromDB(pluginPath: string): Promise<any> {
+  private fetchPluginInfoFromDB(pluginPath: string): any {
     try {
-      const plugins = await api.dbGet('plugins')
+      const plugins = api.dbGet('plugins')
       if (plugins && Array.isArray(plugins)) {
         return plugins.find((p: any) => p.path === pluginPath) || null
       }
@@ -197,7 +197,7 @@ export class PluginManager {
 
     console.log('[Plugin] 准备加载插件:', { pluginPath, featureCode })
 
-    const pluginInfoFromDB = await this.fetchPluginInfoFromDB(pluginPath)
+    const pluginInfoFromDB = this.fetchPluginInfoFromDB(pluginPath)
 
     // 如果当前插件就是这个插件，直接返回
     if (this.currentPluginPath === pluginPath) {
@@ -345,7 +345,7 @@ export class PluginManager {
       const view = this.pluginView
       view.webContents.loadURL(pluginUrl)
 
-      view.webContents.on('dom-ready', async () => {
+      view.webContents.on('dom-ready', () => {
         view.webContents.insertCSS(GLOBAL_SCROLLBAR_CSS)
         this.processPluginMode(pluginPath, featureCode, view)
         this.sendPluginLoadedEvent(pluginConfig.name, pluginPath)
@@ -466,20 +466,21 @@ export class PluginManager {
       // 通知渲染进程插件已关闭
       this.mainWindow.webContents.send('plugin-closed')
 
-      // 检查是否需要终止插件（延迟异步处理）
+      // 检查是否需要终止插件
       if (pluginName && currentPath) {
-        this.checkAndKillPlugin(pluginName, currentPath)
+        if (pluginWindowManager.hasWindowsByPlugin(currentPath)) {
+          console.log(`[Plugin] 插件 ${pluginName} 还有打开的子窗口，暂不终止进程`)
+        } else {
+          this.checkAndKillPlugin(pluginName, currentPath)
+        }
       }
     }
   }
 
   // 检查并终止插件
-  private async checkAndKillPlugin(pluginName: string, pluginPath: string): Promise<void> {
-    // 延迟处理，确保隐藏动画或其他逻辑已完成
-    await new Promise((resolve) => setTimeout(resolve, 200))
-
+  private checkAndKillPlugin(pluginName: string, pluginPath: string): void {
     try {
-      const data = await api.dbGet('outKillPlugin')
+      const data = api.dbGet('outKillPlugin')
       if (data && Array.isArray(data) && data.includes(pluginName)) {
         console.log(`插件 ${pluginName} 配置为退出后立即结束，销毁 view`)
         this.killPlugin(pluginPath)
@@ -522,7 +523,7 @@ export class PluginManager {
     }
 
     try {
-      const pluginInfoFromDB = await this.fetchPluginInfoFromDB(pluginPath)
+      const pluginInfoFromDB = this.fetchPluginInfoFromDB(pluginPath)
       const pluginConfig = this.readPluginConfig(pluginPath)
       const isDevelopment = !!pluginInfoFromDB?.isDevelopment
       const { pluginUrl } = this.resolvePluginUrl(pluginPath, pluginConfig, isDevelopment)
@@ -723,7 +724,7 @@ export class PluginManager {
         console.log('[Plugin] 已关闭插件开发者工具')
       } else {
         // 如果未打开，打开开发者工具
-        const mode = await getDevToolsMode()
+        const mode = getDevToolsMode()
         this.pluginView.webContents.openDevTools({ mode })
         console.log('[Plugin] 已打开插件开发者工具')
       }
@@ -823,11 +824,11 @@ export class PluginManager {
   }
 
   // 获取插件模式
-  private async getPluginMode(
+  private getPluginMode(
     webContents: WebContents,
     featureCode: string
   ): Promise<string | undefined> {
-    if (webContents.isDestroyed()) return undefined
+    if (webContents.isDestroyed()) return Promise.resolve(undefined)
 
     const callId = Math.random().toString(36).substring(2, 11)
     return new Promise((resolve) => {
@@ -881,7 +882,7 @@ export class PluginManager {
   /**
    * 调用无界面插件方法
    */
-  public async callHeadlessPluginMethod(
+  public callHeadlessPluginMethod(
     pluginPath: string,
     featureCode: string,
     action: any
@@ -998,14 +999,14 @@ export class PluginManager {
    * 通知插件用户选择了 mainPush 结果
    * @returns 是否需要进入插件界面
    */
-  public async selectMainPush(
+  public selectMainPush(
     pluginPath: string,
     _featureCode: string,
     selectData: { code: string; type: string; payload: string; option: any }
   ): Promise<boolean> {
     const plugin = this.pluginViews.find((v) => v.path === pluginPath)
     if (!plugin || plugin.view.webContents.isDestroyed()) {
-      return false
+      return Promise.resolve(false)
     }
 
     const callId = `mps_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
@@ -1069,11 +1070,9 @@ export class PluginManager {
   /**
    * 读取分离窗口的上次尺寸（按插件名记录）
    */
-  private async getStoredDetachedSize(
-    pluginName: string
-  ): Promise<{ width: number; height: number } | null> {
+  private getStoredDetachedSize(pluginName: string): { width: number; height: number } | null {
     try {
-      const sizes = await api.dbGet('detachedWindowSizes')
+      const sizes = api.dbGet('detachedWindowSizes')
       if (sizes && typeof sizes === 'object' && !Array.isArray(sizes) && sizes[pluginName]) {
         const rawSize = sizes[pluginName]
         const width = Number(rawSize?.width)
@@ -1107,7 +1106,7 @@ export class PluginManager {
     try {
       console.log('[Plugin] 直接在独立窗口中创建插件:', { pluginPath, featureCode })
 
-      const pluginInfoFromDB = await this.fetchPluginInfoFromDB(pluginPath)
+      const pluginInfoFromDB = this.fetchPluginInfoFromDB(pluginPath)
       const pluginConfig = this.readPluginConfig(pluginPath)
       const isDevelopment = !!pluginInfoFromDB?.isDevelopment
       const { pluginUrl, isConfigHeadless } = this.resolvePluginUrl(
@@ -1136,7 +1135,7 @@ export class PluginManager {
         })
       })
 
-      const storedSize = await this.getStoredDetachedSize(pluginConfig.name)
+      const storedSize = this.getStoredDetachedSize(pluginConfig.name)
       const windowWidth = storedSize?.width ?? 800
       const viewHeight = storedSize?.height ?? this.pluginDefaultHeight
       const logoUrl = this.buildPluginLogoUrl(pluginPath, pluginConfig.logo)
@@ -1164,7 +1163,7 @@ export class PluginManager {
 
       pluginView.webContents.loadURL(pluginUrl)
 
-      pluginView.webContents.on('did-finish-load', async () => {
+      pluginView.webContents.on('did-finish-load', () => {
         pluginView.webContents.insertCSS(GLOBAL_SCROLLBAR_CSS)
         pluginView.webContents.send('on-plugin-enter', api.getLaunchParam())
       })
@@ -1200,7 +1199,7 @@ export class PluginManager {
       const pluginJsonPath = path.join(this.currentPluginPath, 'plugin.json')
       const pluginConfig = JSON.parse(fsSync.readFileSync(pluginJsonPath, 'utf-8'))
 
-      const storedSize = await this.getStoredDetachedSize(pluginConfig.name)
+      const storedSize = this.getStoredDetachedSize(pluginConfig.name)
       const defaultViewHeight = this.pluginDefaultHeight
 
       // 若存在历史尺寸则优先使用

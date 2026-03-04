@@ -166,12 +166,12 @@ class APIManager {
   /**
    * 数据库辅助方法（供其他模块使用）
    */
-  public async dbPut(key: string, data: any): Promise<any> {
-    return await databaseAPI.dbPut(key, data)
+  public dbPut(key: string, data: any): any {
+    return databaseAPI.dbPut(key, data)
   }
 
-  public async dbGet(key: string): Promise<any> {
-    return await databaseAPI.dbGet(key)
+  public dbGet(key: string): any {
+    return databaseAPI.dbGet(key)
   }
 
   /**
@@ -276,7 +276,7 @@ class APIManager {
    */
   private async handleGlobalShortcut(target: string): Promise<void> {
     try {
-      const plugins: any = await databaseAPI.dbGet('plugins')
+      const plugins: any = databaseAPI.dbGet('plugins')
       const pluginList = Array.isArray(plugins) ? plugins : []
 
       const parts = target.split('/')

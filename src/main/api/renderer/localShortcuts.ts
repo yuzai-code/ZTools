@@ -27,7 +27,7 @@ const LOCAL_SHORTCUTS_KEY = 'local-shortcuts'
 /**
  * 获取 macOS 应用图标文件路径
  */
-async function getMacAppIconFile(appPath: string): Promise<string> {
+function getMacAppIconFile(appPath: string): Promise<string> {
   return new Promise((resolve) => {
     const plistPath = path.join(appPath, 'Contents', 'Info.plist')
 
@@ -100,9 +100,9 @@ export class LocalShortcutsAPI {
   /**
    * 获取所有本地启动项
    */
-  public async getAllShortcuts(): Promise<LocalShortcut[]> {
+  public getAllShortcuts(): LocalShortcut[] {
     try {
-      const shortcuts = await databaseAPI.dbGet(LOCAL_SHORTCUTS_KEY)
+      const shortcuts = databaseAPI.dbGet(LOCAL_SHORTCUTS_KEY)
       return shortcuts || []
     } catch (error) {
       console.error('[LocalShortcut] 获取本地启动项失败:', error)
@@ -214,7 +214,7 @@ export class LocalShortcutsAPI {
       }
 
       // 读取现有列表
-      const shortcuts = await this.getAllShortcuts()
+      const shortcuts = this.getAllShortcuts()
 
       // 检查是否已存在
       const exists = shortcuts.some((s) => s.path === selectedPath)
@@ -226,7 +226,7 @@ export class LocalShortcutsAPI {
       shortcuts.push(shortcut)
 
       // 保存到数据库
-      await databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, shortcuts)
+      databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, shortcuts)
 
       console.log('[LocalShortcut] 添加本地启动项成功:', shortcut.name)
 
@@ -319,7 +319,7 @@ export class LocalShortcutsAPI {
       }
 
       // 读取现有列表
-      const shortcuts = await this.getAllShortcuts()
+      const shortcuts = this.getAllShortcuts()
 
       // 检查是否已存在
       const exists = shortcuts.some((s) => s.path === selectedPath)
@@ -331,7 +331,7 @@ export class LocalShortcutsAPI {
       shortcuts.push(shortcut)
 
       // 保存到数据库
-      await databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, shortcuts)
+      databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, shortcuts)
 
       console.log('[LocalShortcut] 添加本地启动项成功:', shortcut.name)
 
@@ -350,14 +350,14 @@ export class LocalShortcutsAPI {
    */
   private async deleteShortcut(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const shortcuts = await this.getAllShortcuts()
+      const shortcuts = this.getAllShortcuts()
       const filtered = shortcuts.filter((s) => s.id !== id)
 
       if (filtered.length === shortcuts.length) {
         return { success: false, error: '未找到该项目' }
       }
 
-      await databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, filtered)
+      databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, filtered)
 
       console.log('[LocalShortcut] 删除本地启动项成功:', id)
 
@@ -379,7 +379,7 @@ export class LocalShortcutsAPI {
     alias: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const shortcuts = await this.getAllShortcuts()
+      const shortcuts = this.getAllShortcuts()
       const shortcut = shortcuts.find((s) => s.id === id)
 
       if (!shortcut) {
@@ -398,7 +398,7 @@ export class LocalShortcutsAPI {
         .join('')
 
       // 保存到数据库
-      await databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, shortcuts)
+      databaseAPI.dbPut(LOCAL_SHORTCUTS_KEY, shortcuts)
 
       console.log('[LocalShortcut] 更新本地启动项别名成功:', shortcut.name, '->', shortcut.alias || '(无别名)')
 

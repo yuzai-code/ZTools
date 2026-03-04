@@ -28,7 +28,7 @@ class WebSearchAPI {
   private setupIPC(): void {
     ipcMain.handle('web-search:get-all', async () => {
       try {
-        const engines = await this.getAllEngines()
+        const engines = this.getAllEngines()
         return { success: true, data: engines }
       } catch (error: unknown) {
         console.error('[WebSearch] 获取搜索引擎列表失败:', error)
@@ -92,9 +92,9 @@ class WebSearchAPI {
   /**
    * 获取所有搜索引擎
    */
-  public async getAllEngines(): Promise<WebSearchEngine[]> {
+  public getAllEngines(): WebSearchEngine[] {
     try {
-      const data = await databaseAPI.dbGet(this.DB_KEY)
+      const data = databaseAPI.dbGet(this.DB_KEY)
       if (data && Array.isArray(data)) {
         return data
       }
@@ -115,7 +115,7 @@ class WebSearchAPI {
       return { success: false, error: 'URL 必须包含 {q} 占位符' }
     }
 
-    const engines = await this.getAllEngines()
+    const engines = this.getAllEngines()
 
     // 自动生成 ID
     if (!engine.id) {
@@ -133,7 +133,7 @@ class WebSearchAPI {
     }
 
     engines.push(engine)
-    await databaseAPI.dbPut(this.DB_KEY, engines)
+    databaseAPI.dbPut(this.DB_KEY, engines)
 
     this.notifyCommandsChanged()
 
@@ -151,14 +151,14 @@ class WebSearchAPI {
       return { success: false, error: 'URL 必须包含 {q} 占位符' }
     }
 
-    const engines = await this.getAllEngines()
+    const engines = this.getAllEngines()
     const index = engines.findIndex((e) => e.id === engine.id)
     if (index === -1) {
       return { success: false, error: '未找到该搜索引擎' }
     }
 
     engines[index] = engine
-    await databaseAPI.dbPut(this.DB_KEY, engines)
+    databaseAPI.dbPut(this.DB_KEY, engines)
 
     this.notifyCommandsChanged()
 
@@ -169,14 +169,14 @@ class WebSearchAPI {
    * 删除搜索引擎
    */
   public async deleteEngine(engineId: string): Promise<{ success: boolean; error?: string }> {
-    const engines = await this.getAllEngines()
+    const engines = this.getAllEngines()
     const index = engines.findIndex((e) => e.id === engineId)
     if (index === -1) {
       return { success: false, error: '未找到该搜索引擎' }
     }
 
     engines.splice(index, 1)
-    await databaseAPI.dbPut(this.DB_KEY, engines)
+    databaseAPI.dbPut(this.DB_KEY, engines)
 
     this.notifyCommandsChanged()
 
@@ -187,7 +187,7 @@ class WebSearchAPI {
    * 获取搜索引擎对应的插件 features（用于合并到系统插件）
    */
   public async getSearchEngineFeatures(): Promise<any[]> {
-    const engines = await this.getAllEngines()
+    const engines = this.getAllEngines()
     return engines
       .filter((e) => e.enabled)
       .map((e) => ({
@@ -213,7 +213,7 @@ class WebSearchAPI {
       return null
     }
     const engineId = featureCode.substring(prefix.length)
-    const engines = await this.getAllEngines()
+    const engines = this.getAllEngines()
     return engines.find((e) => e.id === engineId) || null
   }
 

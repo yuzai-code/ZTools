@@ -63,7 +63,7 @@ export class PluginRedirectAPI {
     }
   }
 
-  private async processRedirect(label: string | [string, string], payload?: any): Promise<void> {
+  private processRedirect(label: string | [string, string], payload?: any): void {
     console.log('[Redirect] processRedirect', label, payload)
 
     // 检查 payload 类型：只支持字符串类型（用于 regex 或 over 类型的匹配指令）
@@ -73,7 +73,7 @@ export class PluginRedirectAPI {
     }
 
     try {
-      const plugins = await databaseAPI.dbGet('plugins')
+      const plugins = databaseAPI.dbGet('plugins')
       if (!plugins || !Array.isArray(plugins)) {
         this.showNotification('未找到插件列表')
         return
