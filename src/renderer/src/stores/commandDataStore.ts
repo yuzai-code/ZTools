@@ -171,6 +171,26 @@ export const useCommandDataStore = defineStore('commandData', () => {
     Record<string, { path: string; featureCode?: string; name: string }>
   >({})
 
+  // 超级面板固定列表缓存
+  const superPanelPinned = ref<any[]>([])
+
+  async function loadSuperPanelPinnedData(): Promise<void> {
+    try {
+      superPanelPinned.value = await window.ztools.getSuperPanelPinned()
+    } catch {
+      superPanelPinned.value = []
+    }
+  }
+
+  function isPinnedToSuperPanel(app: any): boolean {
+    return superPanelPinned.value.some((item) => {
+      if (app.featureCode) {
+        return item.path === app.path && item.featureCode === app.featureCode
+      }
+      return item.path === app.path && item.name === app.name
+    })
+  }
+
   // 生成指令唯一标识（与设置插件保持一致）
   // 格式: pluginName:featureCode:cmdName:cmdType
   function getCommandId(cmd: Command): string {
@@ -240,7 +260,12 @@ export const useCommandDataStore = defineStore('commandData', () => {
       // 先加载禁用指令列表和指令列表，再加载历史记录和固定列表（历史记录清理需要依赖指令列表）
       await loadDisabledCommands()
       await loadCommands()
-      await Promise.all([loadHistoryData(), loadPinnedData(), loadSearchPreference()])
+      await Promise.all([
+        loadHistoryData(),
+        loadPinnedData(),
+        loadSearchPreference(),
+        loadSuperPanelPinnedData()
+      ])
 
       // 监听后端历史记录变化事件
       window.ztools.onHistoryChanged(() => {
@@ -260,6 +285,11 @@ export const useCommandDataStore = defineStore('commandData', () => {
           return
         }
         loadPinnedData()
+      })
+
+      // 监听超级面板固定列表变化事件
+      window.ztools.onSuperPanelPinnedChanged(() => {
+        loadSuperPanelPinnedData()
       })
 
       // 监听禁用指令列表变化事件
@@ -1112,7 +1142,9 @@ export const useCommandDataStore = defineStore('commandData', () => {
    * 获取与搜索查询匹配的 mainPush 功能列表
    * 根据每个 mainPush feature 的 cmds 定义检查匹配
    */
-  function getMatchingMainPushFeatures(query: string): Array<MainPushFeature & { matchedCmdType: string }> {
+  function getMatchingMainPushFeatures(
+    query: string
+  ): Array<MainPushFeature & { matchedCmdType: string }> {
     if (!query.trim()) return []
 
     const results: Array<MainPushFeature & { matchedCmdType: string }> = []
@@ -1130,8 +1162,12 @@ export const useCommandDataStore = defineStore('commandData', () => {
           // 文本匹配：检查查询是否部分匹配 cmd 名称（使用 Fuse.js 的结果或简单包含）
           const cmdLower = cmd.toLowerCase()
           const queryLower = query.toLowerCase()
-          const cmdPinyin = pinyin(cmd, { toneType: 'none', type: 'string' }).replace(/\s+/g, '').toLowerCase()
-          const cmdPinyinAbbr = pinyin(cmd, { pattern: 'first', toneType: 'none', type: 'string' }).replace(/\s+/g, '').toLowerCase()
+          const cmdPinyin = pinyin(cmd, { toneType: 'none', type: 'string' })
+            .replace(/\s+/g, '')
+            .toLowerCase()
+          const cmdPinyinAbbr = pinyin(cmd, { pattern: 'first', toneType: 'none', type: 'string' })
+            .replace(/\s+/g, '')
+            .toLowerCase()
 
           if (
             cmdLower.includes(queryLower) ||
@@ -1152,7 +1188,9 @@ export const useCommandDataStore = defineStore('commandData', () => {
                 matchedCmdType = 'regex'
                 break
               }
-            } catch { /* 忽略无效正则 */ }
+            } catch {
+              /* 忽略无效正则 */
+            }
           }
         } else if (cmd.type === 'over') {
           const minLen = cmd.minLength ?? 1
@@ -1162,7 +1200,9 @@ export const useCommandDataStore = defineStore('commandData', () => {
               try {
                 const excludeStr = cmd.exclude.replace(/^\/|\/[gimuy]*$/g, '')
                 if (new RegExp(excludeStr).test(query)) continue
-              } catch { /* 忽略 */ }
+              } catch {
+                /* 忽略 */
+              }
             }
             matched = true
             matchedCmdType = 'over'
@@ -1218,6 +1258,11 @@ export const useCommandDataStore = defineStore('commandData', () => {
     getPinnedCommands,
     updatePinnedOrder,
     clearPinned,
+
+    // 超级面板固定方法
+    superPanelPinned,
+    loadSuperPanelPinnedData,
+    isPinnedToSuperPanel,
 
     // 搜索偏好
     saveSearchPreference

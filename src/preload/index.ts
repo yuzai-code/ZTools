@@ -151,6 +151,9 @@ const api = {
   onPinnedChanged: (callback: () => void) => {
     ipcRenderer.on('pinned-changed', callback)
   },
+  onSuperPanelPinnedChanged: (callback: () => void) => {
+    ipcRenderer.on('super-panel-pinned-changed', callback)
+  },
   onDisabledCommandsChanged: (callback: () => void) => {
     ipcRenderer.on('disabled-commands-changed', callback)
   },
@@ -351,7 +354,9 @@ const api = {
     ipcRenderer.invoke('super-panel:unpin-command', path, featureCode),
   pinToSuperPanel: (command: any) => ipcRenderer.invoke('super-panel:pin-command', command),
   getSuperPanelPinned: () => ipcRenderer.invoke('super-panel:get-pinned'),
-  onSuperPanelLaunch: (callback: (data: { command: any; clipboardContent?: any; windowInfo?: any }) => void) => {
+  onSuperPanelLaunch: (
+    callback: (data: { command: any; clipboardContent?: any; windowInfo?: any }) => void
+  ) => {
     ipcRenderer.on('super-panel-launch', (_event, data) => callback(data))
   },
   // 超级面板窗口匹配
@@ -507,6 +512,7 @@ declare global {
       onAppLaunched: (callback: () => void) => void
       onHistoryChanged: (callback: () => void) => void
       onPinnedChanged: (callback: () => void) => void
+      onSuperPanelPinnedChanged: (callback: () => void) => void
       onIpcLaunch: (
         callback: (options: {
           path: string

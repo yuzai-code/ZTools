@@ -588,6 +588,7 @@ class SuperPanelManager {
     ipcMain.handle('super-panel:update-pinned-order', (_event, commands: any[]) => {
       try {
         databaseAPI.dbPut('super-panel-pinned', commands)
+        this.mainWindow?.webContents.send('super-panel-pinned-changed')
         return { success: true }
       } catch (error) {
         console.error('[SuperPanel] 更新超级面板固定列表顺序失败:', error)
@@ -599,41 +600,65 @@ class SuperPanelManager {
     })
 
     // 取消固定命令
-    ipcMain.handle(
-      'super-panel:unpin-command',
-      (_event, path: string, featureCode?: string) => {
-        try {
-          console.log('[SuperPanel] 收到取消固定请求:', { path, featureCode })
-          let pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
-          if (!Array.isArray(pinnedCommands)) {
-            pinnedCommands = []
-          }
+    ipcMain.handle('super-panel:unpin-command', (_event, path: string, featureCode?: string) => {
+      try {
+        console.log('[SuperPanel] 收到取消固定请求:', { path, featureCode })
+        let pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
+        if (!Array.isArray(pinnedCommands)) {
+          pinnedCommands = []
+        }
 
-          // 过滤掉要取消固定的命令
-          pinnedCommands = pinnedCommands.filter((cmd: any) => {
+        // 递归处理文件夹内部的指令
+        pinnedCommands = pinnedCommands
+          .map((cmd: any) => {
+            if (cmd.isFolder) {
+              cmd.items = cmd.items.filter((item: any) => {
+                if (featureCode) {
+                  return !(item.path === path && item.featureCode === featureCode)
+                }
+                return item.path !== path
+              })
+              return cmd
+            }
+            return cmd
+          })
+          .filter((cmd: any) => {
+            if (cmd.isFolder) {
+              // 文件夹为空则移除，只剩1个则展开
+              return cmd.items.length > 0
+            }
             if (featureCode) {
               return !(cmd.path === path && cmd.featureCode === featureCode)
             }
             return cmd.path !== path
           })
 
-          console.log('[SuperPanel] 更新后的固定列表:', pinnedCommands.length, '项')
-          databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
-
-          // 重新加载固定列表
-          this.loadPinnedCommands()
-          console.log('[SuperPanel] 已重新加载固定列表')
-
-          return { success: true }
-        } catch (error) {
-          console.error('[SuperPanel] 取消固定失败:', error)
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : '未知错误'
+        // 文件夹只剩1个指令时自动解散
+        pinnedCommands = pinnedCommands.flatMap((cmd: any) => {
+          if (cmd.isFolder && cmd.items.length === 1) {
+            return cmd.items
           }
+          return [cmd]
+        })
+
+        console.log('[SuperPanel] 更新后的固定列表:', pinnedCommands.length, '项')
+        databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
+
+        // 重新加载固定列表
+        this.loadPinnedCommands()
+        console.log('[SuperPanel] 已重新加载固定列表')
+
+        this.mainWindow?.webContents.send('super-panel-pinned-changed')
+
+        return { success: true }
+      } catch (error) {
+        console.error('[SuperPanel] 取消固定失败:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误'
         }
       }
-    )
+    })
 
     // 固定命令到超级面板
     ipcMain.handle('super-panel:pin-command', (_event, command: any) => {
@@ -664,6 +689,7 @@ class SuperPanelManager {
           })
           databaseAPI.dbPut('super-panel-pinned', pinnedCommands)
           this.loadPinnedCommands()
+          this.mainWindow?.webContents.send('super-panel-pinned-changed')
         }
 
         return { success: true }
@@ -680,7 +706,17 @@ class SuperPanelManager {
     ipcMain.handle('super-panel:get-pinned', () => {
       try {
         const pinnedCommands = databaseAPI.dbGet('super-panel-pinned')
-        return Array.isArray(pinnedCommands) ? pinnedCommands : []
+        if (!Array.isArray(pinnedCommands)) return []
+
+        const flattened: any[] = []
+        for (const cmd of pinnedCommands) {
+          if (cmd.isFolder && Array.isArray(cmd.items)) {
+            flattened.push(...cmd.items)
+          } else {
+            flattened.push(cmd)
+          }
+        }
+        return flattened
       } catch {
         return []
       }

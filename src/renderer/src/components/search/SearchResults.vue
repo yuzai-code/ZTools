@@ -53,7 +53,11 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, ref, toRaw, watch } from 'vue'
-import { useMainPushResults, type MainPushGroup, type MainPushItem } from '../../composables/useMainPushResults'
+import {
+  useMainPushResults,
+  type MainPushGroup,
+  type MainPushItem
+} from '../../composables/useMainPushResults'
 import { useNavigation } from '../../composables/useNavigation'
 import { useSearchResults } from '../../composables/useSearchResults'
 import { useCommandDataStore } from '../../stores/commandDataStore'
@@ -105,7 +109,9 @@ const {
   isPinned,
   getPinnedCommands,
   updatePinnedOrder,
-  saveSearchPreference
+  saveSearchPreference,
+  loadSuperPanelPinnedData,
+  isPinnedToSuperPanel
 } = commandDataStore
 
 // 使用搜索结果 composable
@@ -119,27 +125,8 @@ const { mainPushGroups, handleMainPushSelect } = useMainPushResults(props)
 const scrollContainerRef = ref<HTMLElement>()
 const showRecentInSearch = computed(() => windowStore.showRecentInSearch)
 
-// 超级面板固定列表缓存
-const superPanelPinned = ref<any[]>([])
-
-async function loadSuperPanelPinned(): Promise<void> {
-  try {
-    superPanelPinned.value = await window.ztools.getSuperPanelPinned()
-  } catch {
-    superPanelPinned.value = []
-  }
-}
-
-function isPinnedToSuperPanel(app: any): boolean {
-  return superPanelPinned.value.some((item) => {
-    if (app.featureCode) {
-      return item.path === app.path && item.featureCode === app.featureCode
-    }
-    return item.path === app.path && item.name === app.name
-  })
-}
-
 // 是否有搜索内容
+
 const hasSearchContent = computed(() => {
   return !!(props.searchQuery.trim() || props.pastedImage || props.pastedText || props.pastedFiles)
 })
@@ -484,7 +471,8 @@ async function handleAppContextMenu(
 
   // 如果是应用（不是插件和系统设置，且不是协议链接），显示"打开文件位置"
   const isProtocolLink = /^[a-zA-Z][a-zA-Z0-9+\-.]*:/.test(app.path) && !app.path.includes('\\')
-  const isLocalApp = app.type !== 'system-setting' && app.type !== 'plugin' && app.path && !isProtocolLink
+  const isLocalApp =
+    app.type !== 'system-setting' && app.type !== 'plugin' && app.path && !isProtocolLink
   if (isLocalApp) {
     menuItems.push({
       id: `reveal-in-finder:${JSON.stringify({ path: app.path })}`,
@@ -920,7 +908,7 @@ async function handleContextMenuCommand(command: string): Promise<void> {
     try {
       const app = JSON.parse(appJson)
       await window.ztools.pinToSuperPanel(app)
-      await loadSuperPanelPinned()
+      await loadSuperPanelPinnedData()
     } catch (error) {
       console.error('固定到超级面板失败:', error)
     }
@@ -929,7 +917,7 @@ async function handleContextMenuCommand(command: string): Promise<void> {
     try {
       const { path, featureCode } = JSON.parse(jsonStr)
       await window.ztools.unpinSuperPanelCommand(path, featureCode)
-      await loadSuperPanelPinned()
+      await loadSuperPanelPinnedData()
     } catch (error) {
       console.error('从超级面板取消固定失败:', error)
     }
@@ -957,7 +945,6 @@ function resetCollapseState(): void {
 // 初始化
 onMounted(() => {
   window.ztools.onContextMenuCommand(handleContextMenuCommand)
-  loadSuperPanelPinned()
 })
 
 // 导出方法供父组件调用

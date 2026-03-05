@@ -43,32 +43,61 @@
         v-if="pinnedCommands.length > 0"
         v-model="pinnedCommands"
         class="pinned-grid"
-        :item-key="(item: any) => `${item.name}|${item.path}|${item.featureCode || ''}`"
+        :item-key="(item: any) => getItemKey(item)"
         :animation="200"
+        :move="onDragMove"
+        :swap-threshold="0.65"
+        :inverted-swap-threshold="0.65"
         ghost-class="ghost"
         chosen-class="chosen"
+        @start="onDragStart"
         @end="onDragEnd"
       >
         <template #item="{ element: cmd, index }">
           <div
             class="grid-item"
-            :class="{ selected: index === selectedIndex }"
+            :data-item-key="getItemKey(cmd)"
+            :class="{
+              selected: index === selectedIndex
+            }"
             style="cursor: move"
-            @click="launch(cmd)"
-            @mouseenter="selectedIndex = index"
+            @click="isFolder(cmd) ? openFolderPopup(cmd, index) : launch(cmd)"
+            @mouseenter="!isDragging && (selectedIndex = index)"
             @contextmenu.prevent="handleContextMenu(cmd)"
           >
-            <img
-              v-if="cmd.icon && !iconErrors.has(getItemKey(cmd))"
-              :src="cmd.icon"
-              class="grid-icon"
-              draggable="false"
-              @error="iconErrors.add(getItemKey(cmd))"
-            />
-            <div v-else class="grid-icon-placeholder">
-              {{ cmd.name.charAt(0).toUpperCase() }}
-            </div>
-            <span class="grid-name">{{ cmd.name }}</span>
+            <!-- 文件夹图标：2x2 宫格 -->
+            <template v-if="isFolder(cmd)">
+              <div class="folder-icon">
+                <template v-for="i in 4" :key="i">
+                  <img
+                    v-if="cmd.items[i - 1]?.icon && !iconErrors.has(getItemKey(cmd.items[i - 1]))"
+                    :src="cmd.items[i - 1].icon"
+                    class="folder-thumb"
+                    draggable="false"
+                    @error="iconErrors.add(getItemKey(cmd.items[i - 1]))"
+                  />
+                  <div v-else-if="cmd.items[i - 1]" class="folder-thumb-placeholder">
+                    {{ cmd.items[i - 1].name.charAt(0).toUpperCase() }}
+                  </div>
+                  <div v-else class="folder-thumb-empty" />
+                </template>
+              </div>
+              <span class="grid-name">{{ cmd.name }}</span>
+            </template>
+            <!-- 普通指令图标 -->
+            <template v-else>
+              <img
+                v-if="cmd.icon && !iconErrors.has(getItemKey(cmd))"
+                :src="cmd.icon"
+                class="grid-icon"
+                draggable="false"
+                @error="iconErrors.add(getItemKey(cmd))"
+              />
+              <div v-else class="grid-icon-placeholder">
+                {{ cmd.name.charAt(0).toUpperCase() }}
+              </div>
+              <span class="grid-name">{{ cmd.name }}</span>
+            </template>
           </div>
         </template>
       </Draggable>
@@ -159,6 +188,75 @@
       <span class="loading-text">加载中...</span>
     </div>
 
+    <!-- 文件夹弹窗 - 覆盖式 -->
+    <Transition name="slide-up">
+      <div v-if="showFolderPopup && currentFolder" class="folder-popup-overlay">
+        <div class="folder-popup-backdrop" @click="closeFolderPopup" />
+        <div class="folder-popup-panel">
+          <div class="folder-popup-header">
+            <span
+              v-if="!isRenamingFolder"
+              class="folder-popup-title clickable"
+              @click="startRenameFolder"
+            >
+              {{ currentFolder.name }}
+            </span>
+            <input
+              v-else
+              ref="folderNameInputRef"
+              v-model="folderNameInput"
+              class="folder-rename-input"
+              maxlength="20"
+              @blur="confirmRenameFolder"
+              @keydown.enter="confirmRenameFolder"
+              @keydown.escape.stop="cancelRenameFolder"
+            />
+            <div class="header-menu-btn" title="关闭" @click="closeFolderPopup">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path
+                  d="M3 3l8 8M11 3l-8 8"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </div>
+          </div>
+          <draggable
+            v-if="currentFolder"
+            v-model="currentFolder.items"
+            class="folder-popup-grid"
+            :item-key="(item: any) => getItemKey(item)"
+            :animation="200"
+            ghost-class="ghost"
+            chosen-class="chosen"
+            @end="savePinnedCommands"
+          >
+            <template #item="{ element: cmd, index: idx }">
+              <div
+                class="grid-item"
+                style="cursor: move"
+                @click="launchFromFolder(cmd)"
+                @contextmenu.prevent="handleFolderItemContextMenu(cmd, idx)"
+              >
+                <img
+                  v-if="cmd.icon && !iconErrors.has(getItemKey(cmd))"
+                  :src="cmd.icon"
+                  class="grid-icon"
+                  draggable="false"
+                  @error="iconErrors.add(getItemKey(cmd))"
+                />
+                <div v-else class="grid-icon-placeholder">
+                  {{ cmd.name.charAt(0).toUpperCase() }}
+                </div>
+                <span class="grid-name">{{ cmd.name }}</span>
+              </div>
+            </template>
+          </draggable>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 窗口匹配底部滑出面板 -->
     <Transition name="slide-up">
       <div v-if="showWindowMatch" class="window-match-overlay">
@@ -229,6 +327,32 @@ interface CommandItem {
   param?: any
 }
 
+interface FolderItem {
+  isFolder: true
+  id: string
+  name: string
+  items: CommandItem[]
+}
+
+type GridItem = CommandItem | FolderItem
+
+function isFolder(item: GridItem): item is FolderItem {
+  return 'isFolder' in item && (item as FolderItem).isFolder === true
+}
+
+function generateFolderId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+}
+
+/** 兼容旧数据：给没有 id 的文件夹补上 */
+function ensureFolderIds(items: GridItem[]): void {
+  for (const item of items) {
+    if (isFolder(item) && !item.id) {
+      item.id = generateFolderId()
+    }
+  }
+}
+
 interface ClipboardContent {
   type: 'text' | 'image' | 'file'
   text?: string
@@ -237,7 +361,7 @@ interface ClipboardContent {
 }
 
 const mode = ref<'pinned' | 'search' | 'loading'>('loading')
-const pinnedCommands = ref<CommandItem[]>([])
+const pinnedCommands = ref<GridItem[]>([])
 const searchResults = ref<CommandItem[]>([])
 const selectedIndex = ref(0)
 const iconErrors = ref<Set<string>>(new Set())
@@ -256,6 +380,20 @@ const windowMatchSelectedIndex = ref(0)
 const currentWindowInfo = ref<{ app?: string; title?: string } | null>(null)
 // 窗口匹配图标闪动
 const windowMatchBlink = ref(false)
+
+// 文件夹弹窗相关状态
+const showFolderPopup = ref(false)
+const currentFolder = ref<FolderItem | null>(null)
+const currentFolderIndex = ref(-1)
+const isRenamingFolder = ref(false)
+const folderNameInput = ref('')
+const folderNameInputRef = ref<HTMLInputElement | null>(null)
+
+// 拖拽排序相关状态
+const isDragging = ref(false)
+const dragItemKey = ref('') // 被拖拽项的 key（身份标识）
+const dragSnapshot = ref<GridItem[]>([])
+const dragItemIsFolder = ref(false) // 被拖拽项是否是文件夹
 
 function getThemeColor(colorName: string, isDark: boolean): string {
   const colors: Record<string, { light: string; dark: string }> = {
@@ -339,10 +477,9 @@ const clipboardDescription = computed(() => {
   return ''
 })
 
-// 拖动排序结束后保存顺序
-async function onDragEnd(): Promise<void> {
+// 保存固定列表
+async function savePinnedCommands(): Promise<void> {
   try {
-    // 将响应式对象转换为纯 JSON 对象，避免克隆错误
     const plainCommands = JSON.parse(JSON.stringify(pinnedCommands.value))
     await window.ztools.updateSuperPanelPinnedOrder(plainCommands)
   } catch (error) {
@@ -350,15 +487,204 @@ async function onDragEnd(): Promise<void> {
   }
 }
 
+// 拖动排序结束后保存顺序
+async function onDragEnd(): Promise<void> {
+  isDragging.value = false
+  dragItemKey.value = ''
+  dragItemIsFolder.value = false
+  dragSnapshot.value = []
+
+  savePinnedCommands()
+}
+
+// 添加到已有文件夹
+function addToFolder(folderIndex: number, draggedIndex: number): void {
+  const folder = pinnedCommands.value[folderIndex]
+  if (!isFolder(folder)) return
+
+  const dragged = pinnedCommands.value[draggedIndex]
+  if (isFolder(dragged)) return
+
+  folder.items.push(dragged as CommandItem)
+  pinnedCommands.value.splice(draggedIndex, 1)
+  savePinnedCommands()
+}
+
+// 移出文件夹
+function moveOutOfFolder(folderIndex: number, itemIndex: number): void {
+  const folder = pinnedCommands.value[folderIndex]
+  if (!isFolder(folder)) return
+
+  const item = folder.items.splice(itemIndex, 1)[0]
+  pinnedCommands.value.splice(folderIndex + 1, 0, item)
+
+  // 文件夹只剩 1 个指令时自动解散
+  if (folder.items.length <= 1) {
+    const lastItem = folder.items[0]
+    pinnedCommands.value.splice(folderIndex, 1, ...(lastItem ? [lastItem] : []))
+    closeFolderPopup()
+  } else if (showFolderPopup.value && currentFolder.value) {
+    // 更新弹窗中的文件夹引用
+    currentFolder.value = folder
+  }
+
+  savePinnedCommands()
+}
+
+// 从文件夹中取消固定
+function unpinFromFolder(folderIndex: number, itemIndex: number): void {
+  const folder = pinnedCommands.value[folderIndex]
+  if (!isFolder(folder)) return
+
+  folder.items.splice(itemIndex, 1)
+
+  if (folder.items.length <= 1) {
+    const lastItem = folder.items[0]
+    pinnedCommands.value.splice(folderIndex, 1, ...(lastItem ? [lastItem] : []))
+    closeFolderPopup()
+  } else if (showFolderPopup.value && currentFolder.value) {
+    currentFolder.value = folder
+  }
+
+  savePinnedCommands()
+}
+
+// 解散文件夹（将内容展开到原位置）
+function ungroupFolder(folderIndex: number): void {
+  const folder = pinnedCommands.value[folderIndex]
+  if (!isFolder(folder)) return
+
+  pinnedCommands.value.splice(folderIndex, 1, ...folder.items)
+  savePinnedCommands()
+}
+
+// 删除文件夹（连同内容一起删除）
+function deleteFolder(folderIndex: number): void {
+  const folder = pinnedCommands.value[folderIndex]
+  if (!isFolder(folder)) return
+
+  pinnedCommands.value.splice(folderIndex, 1)
+  savePinnedCommands()
+}
+
 // 右键菜单
-async function handleContextMenu(cmd: CommandItem): Promise<void> {
+async function handleContextMenu(cmd: GridItem): Promise<void> {
+  if (isFolder(cmd)) {
+    const folderIndex = pinnedCommands.value.indexOf(cmd)
+    const menuItems = [
+      { id: `rename-folder:${folderIndex}`, label: '重命名文件夹' },
+      { id: `ungroup-folder:${folderIndex}`, label: '解散文件夹' },
+      { id: `delete-folder:${folderIndex}`, label: '删除文件夹' }
+    ]
+    await window.ztools.showContextMenu(menuItems)
+  } else {
+    const itemIndex = pinnedCommands.value.indexOf(cmd)
+
+    // 查找当前可用的文件夹列表
+    const folderOptions = pinnedCommands.value
+      .map((item, idx) => (isFolder(item) ? { idx, name: item.name } : null))
+      .filter(Boolean) as { idx: number; name: string }[]
+
+    // 构建子菜单添加至文件夹
+    const addToFolderMenu = folderOptions.map((f) => ({
+      id: `add-to-folder:${itemIndex}:${f.idx}`,
+      label: f.name
+    }))
+
+    addToFolderMenu.push({ id: `new-folder-with:${itemIndex}`, label: '新建文件夹' })
+
+    const menuItems = [
+      {
+        id: 'add-folder-group',
+        label: '添加到文件夹',
+        submenu: addToFolderMenu
+      },
+      {
+        id: `unpin:${JSON.stringify({ path: cmd.path, featureCode: cmd.featureCode })}`,
+        label: '取消固定'
+      }
+    ]
+    await window.ztools.showContextMenu(menuItems)
+  }
+}
+
+// ========== 文件夹弹窗 ==========
+function openFolderPopup(folder: FolderItem, index: number): void {
+  currentFolder.value = folder
+  currentFolderIndex.value = index
+  showFolderPopup.value = true
+  isRenamingFolder.value = false
+}
+
+function closeFolderPopup(): void {
+  showFolderPopup.value = false
+  currentFolder.value = null
+  currentFolderIndex.value = -1
+  isRenamingFolder.value = false
+}
+
+function launchFromFolder(cmd: CommandItem): void {
+  closeFolderPopup()
+  launch(cmd)
+}
+
+// ========== 文件夹重命名 ==========
+function startRenameFolder(): void {
+  if (!currentFolder.value) return
+  isRenamingFolder.value = true
+  folderNameInput.value = currentFolder.value.name
+  setTimeout(() => {
+    folderNameInputRef.value?.focus()
+    folderNameInputRef.value?.select()
+  }, 200)
+}
+
+function confirmRenameFolder(): void {
+  if (!currentFolder.value || !isRenamingFolder.value) return
+  const newName = folderNameInput.value.trim()
+  if (newName && newName !== currentFolder.value.name) {
+    currentFolder.value.name = newName
+    savePinnedCommands()
+  }
+  isRenamingFolder.value = false
+}
+
+function cancelRenameFolder(): void {
+  isRenamingFolder.value = false
+}
+
+// ========== 文件夹弹窗内右键菜单 ==========
+async function handleFolderItemContextMenu(
+  _cmd: CommandItem,
+  indexInFolder: number
+): Promise<void> {
   const menuItems = [
     {
-      id: `unpin:${JSON.stringify({ path: cmd.path, featureCode: cmd.featureCode })}`,
+      id: `move-out:${currentFolderIndex.value}:${indexInFolder}`,
+      label: '移出文件夹'
+    },
+    {
+      id: `unpin-from-folder:${currentFolderIndex.value}:${indexInFolder}`,
       label: '取消固定'
     }
   ]
   await window.ztools.showContextMenu(menuItems)
+}
+
+function onDragStart(evt: any): void {
+  isDragging.value = true
+  const idx = evt.oldIndex ?? -1
+  const item = pinnedCommands.value[idx]
+  dragItemKey.value = item ? getItemKey(item) : ''
+  dragItemIsFolder.value = item ? isFolder(item) : false
+  dragSnapshot.value = JSON.parse(JSON.stringify(pinnedCommands.value))
+}
+
+/**
+ * vuedraggable 的 move 回调。
+ */
+function onDragMove(): boolean | void {
+  if (!isDragging.value || dragItemIsFolder.value) return
 }
 
 // 返回固定列表
@@ -395,12 +721,15 @@ async function launchWindowMatch(cmd: CommandItem): Promise<void> {
   await launch(cmd)
 }
 
-function getItemKey(item: CommandItem): string {
+function getItemKey(item: GridItem): string {
+  if (isFolder(item)) {
+    return `folder-${item.id}`
+  }
   return `${item.path}-${item.featureCode || ''}-${item.name}`
 }
 
 // 获取当前显示的列表
-function getCurrentList(): CommandItem[] {
+function getCurrentList(): (GridItem | CommandItem)[] {
   return mode.value === 'pinned' ? pinnedCommands.value : searchResults.value
 }
 
@@ -457,13 +786,22 @@ function handleKeydown(event: KeyboardEvent): void {
         break
       case 'Enter':
         event.preventDefault()
-        if (list[selectedIndex.value]) {
-          launch(list[selectedIndex.value])
+        {
+          const item = list[selectedIndex.value]
+          if (item && isFolder(item)) {
+            openFolderPopup(item, selectedIndex.value)
+          } else if (item) {
+            launch(item as CommandItem)
+          }
         }
         break
       case 'Escape':
         event.preventDefault()
-        window.close()
+        if (showFolderPopup.value) {
+          closeFolderPopup()
+        } else {
+          window.close()
+        }
         break
     }
   } else {
@@ -484,12 +822,16 @@ function handleKeydown(event: KeyboardEvent): void {
       case 'Enter':
         event.preventDefault()
         if (list[selectedIndex.value]) {
-          launch(list[selectedIndex.value])
+          launch(list[selectedIndex.value] as CommandItem)
         }
         break
       case 'Escape':
         event.preventDefault()
-        window.close()
+        if (showFolderPopup.value) {
+          closeFolderPopup()
+        } else {
+          window.close()
+        }
         break
     }
   }
@@ -546,6 +888,7 @@ onMounted(() => {
     if (data.type === 'pinned') {
       mode.value = 'pinned'
       pinnedCommands.value = data.commands || []
+      ensureFolderIds(pinnedCommands.value)
       selectedIndex.value = 0
       currentClipboardContent.value = null
       scrollToTop()
@@ -661,6 +1004,61 @@ onMounted(() => {
       } catch (error) {
         console.error('[SuperPanel] 取消固定失败:', error)
       }
+    } else if (command.startsWith('rename-folder:')) {
+      const folderIndex = parseInt(command.replace('rename-folder:', ''))
+      const folder = pinnedCommands.value[folderIndex]
+      if (folder && isFolder(folder)) {
+        openFolderPopup(folder, folderIndex)
+        nextTick(() => startRenameFolder())
+      }
+    } else if (command.startsWith('ungroup-folder:')) {
+      const folderIndex = parseInt(command.replace('ungroup-folder:', ''))
+      ungroupFolder(folderIndex)
+    } else if (command.startsWith('delete-folder:')) {
+      const folderIndex = parseInt(command.replace('delete-folder:', ''))
+      deleteFolder(folderIndex)
+    } else if (command.startsWith('move-out:')) {
+      const parts = command.replace('move-out:', '').split(':')
+      const folderIdx = parseInt(parts[0])
+      const itemIdx = parseInt(parts[1])
+      moveOutOfFolder(folderIdx, itemIdx)
+    } else if (command.startsWith('unpin-from-folder:')) {
+      const parts = command.replace('unpin-from-folder:', '').split(':')
+      const folderIdx = parseInt(parts[0])
+      const itemIdx = parseInt(parts[1])
+      unpinFromFolder(folderIdx, itemIdx)
+    } else if (command.startsWith('add-to-folder:')) {
+      const parts = command.replace('add-to-folder:', '').split(':')
+      const itemIdx = parseInt(parts[0])
+      let folderIdx = parseInt(parts[1])
+      // 注意：如果原下标在被拖入目标前面，拖出原元素后目标的下标会减一。但这里我们使用独立的逻辑直接处理：
+      if (itemIdx >= 0 && folderIdx >= 0 && itemIdx !== folderIdx) {
+        // 由于 addToFolder 会使用 splice 操作数组，先保留引用
+        const draggedItem = pinnedCommands.value[itemIdx]
+        const targetFolder = pinnedCommands.value[folderIdx]
+        if (targetFolder && isFolder(targetFolder) && draggedItem && !isFolder(draggedItem)) {
+          // 安全处理 addToFolder 逻辑
+          addToFolder(folderIdx, itemIdx)
+        }
+      }
+    } else if (command.startsWith('new-folder-with:')) {
+      const itemIdx = parseInt(command.replace('new-folder-with:', ''))
+      if (itemIdx >= 0 && itemIdx < pinnedCommands.value.length) {
+        const item = pinnedCommands.value[itemIdx] as CommandItem
+        if (!isFolder(item)) {
+          const folder: FolderItem = {
+            isFolder: true,
+            id: generateFolderId(),
+            name: '新文件夹',
+            items: [item]
+          }
+          pinnedCommands.value.splice(itemIdx, 1, folder)
+          savePinnedCommands()
+          // 自动触发展开改名
+          openFolderPopup(folder, itemIdx)
+          nextTick(() => startRenameFolder())
+        }
+      }
     }
   })
 
@@ -674,6 +1072,8 @@ onMounted(() => {
 
 // 键盘焦点保持
 function handleFocusOut(): void {
+  // 重命名文件夹时不抢焦点，否则 input 无法输入
+  if (isRenamingFolder.value) return
   const panel = document.querySelector('.super-panel') as HTMLElement
   if (panel) {
     panel.focus()
@@ -841,6 +1241,7 @@ onUnmounted(() => {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
   word-break: break-all;
   flex-shrink: 0;
@@ -1050,6 +1451,142 @@ onUnmounted(() => {
 .slide-up-leave-to .window-match-panel {
   transform: translateY(100%);
 }
+/* ========== 文件夹图标 ========== */
+.folder-icon {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: var(--control-bg, rgba(0, 0, 0, 0.05));
+  border: 1.5px solid var(--control-border, rgba(0, 0, 0, 0.08));
+  padding: 3px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.folder-thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+.folder-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary-color, #0284c7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 7px;
+  font-weight: bold;
+}
+
+.folder-thumb-empty {
+  width: 100%;
+  height: 100%;
+}
+
+/* ========== 拖拽合并预览 ========== */
+/* ========== 文件夹弹窗 ========== */
+.folder-popup-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.folder-popup-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.folder-popup-panel {
+  position: relative;
+  z-index: 1;
+  background: #f4f4f4;
+  border-top: 1px solid var(--divider-color);
+  border-radius: 12px 12px 0 0;
+  max-height: 75%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .folder-popup-panel {
+    background: #303133;
+  }
+}
+
+.folder-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--divider-color);
+  flex-shrink: 0;
+}
+
+.folder-popup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.folder-popup-title:hover {
+  background: var(--hover-bg);
+}
+
+.folder-rename-input {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  background: var(--control-bg, rgba(0, 0, 0, 0.05));
+  border: 1px solid var(--primary-color, #0284c7);
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+  flex: 1;
+  max-width: 160px;
+}
+
+.folder-popup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 文件夹弹窗共用 slide-up 过渡动画 */
+.slide-up-enter-active .folder-popup-panel,
+.slide-up-leave-active .folder-popup-panel {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-up-enter-from .folder-popup-panel,
+.slide-up-leave-to .folder-popup-panel {
+  transform: translateY(100%);
+}
+
 /* ========== 窗口匹配图标闪动 ========== */
 .window-match-blink {
   animation: blink-highlight 0.5s ease-in-out 3;
