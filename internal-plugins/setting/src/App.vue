@@ -71,7 +71,8 @@ onMounted(() => {
       'all-commands': 'all-commands',
       sync: 'sync',
       'install-plugin': 'install-plugin',
-      'add-dev-plugin': 'plugins'
+      'add-dev-plugin': 'plugins',
+      about: 'about'
     }
 
     const targetPage = pageMap[action.code] || activePage.value
