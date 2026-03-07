@@ -479,6 +479,17 @@ export class PluginManager {
     cmdName?: string
   ): Promise<void> {
     if (!this.mainWindow) return
+
+    // 先处理当前视图切换，再开始新装配会话，避免 hidePluginView 误中断新会话
+    if (this.currentPluginPath != null && this.currentPluginPath !== pluginPath) {
+      this.logAssemblyTrace('hide-current-plugin-before-switch', {
+        pluginPath,
+        featureCode,
+        currentPluginPath: this.currentPluginPath
+      })
+      this.hidePluginView()
+    }
+
     const assembly = this.beginAssembly(pluginPath, featureCode)
 
     console.log('[Plugin] 准备加载插件:', { assemblyId: assembly.id, pluginPath, featureCode })
@@ -503,16 +514,6 @@ export class PluginManager {
         await this.processPluginMode(pluginPath, featureCode, cached.view, assembly)
       }
       return
-    }
-
-    if (this.currentPluginPath != null) {
-      this.logAssemblyTrace('hide-current-plugin-before-switch', {
-        assemblyId: assembly.id,
-        pluginPath,
-        featureCode,
-        currentPluginPath: this.currentPluginPath
-      })
-      this.hidePluginView()
     }
 
     // 先尝试从缓存中复用已有视图
