@@ -57,6 +57,7 @@ class WindowManager {
   private autoBackToSearchConfig: string = 'never' // 自动返回搜索配置
   private lastFocusTarget: 'mainWindow' | 'plugin' | null = null // 窗口隐藏前的焦点状态
   private isRestoringFocus: boolean = false // 是否正在恢复焦点状态（防止 focus 事件监听器干扰）
+  private suppressBlurHide: boolean = false // 临时抑制 blur 事件隐藏窗口（文件关联打开等场景）
   private appShortcuts: Map<string, string> = new Map() // 应用快捷键映射表 (快捷键 -> 目标指令)
 
   /**
@@ -216,6 +217,7 @@ class WindowManager {
     })
 
     this.mainWindow.on('blur', () => {
+      if (this.suppressBlurHide) return
       this.hideWindow(false)
     })
 
@@ -895,17 +897,8 @@ class WindowManager {
 
     // 从数据库查找设置插件
     try {
-      const plugins: any = api.dbGet('plugins')
-      if (!plugins || !Array.isArray(plugins)) {
-        console.error('[Window] 未找到插件列表')
-        return
-      }
-
-      const settingPlugin = plugins.find((p: any) => p.name === 'setting')
-      if (!settingPlugin) {
-        console.error('[Window] 未找到设置插件')
-        return
-      }
+      const settingPlugin = this.findSettingPlugin()
+      if (!settingPlugin) return
 
       console.log('[Window] 找到设置插件:', settingPlugin.path)
 
@@ -928,6 +921,94 @@ class WindowManager {
       this.forceActivateWindow()
     } catch (error) {
       console.error('[Window] 打开设置插件失败:', error)
+    }
+  }
+
+  /**
+   * 从数据库查找 setting 插件
+   */
+  private findSettingPlugin(): any {
+    const plugins: any = api.dbGet('plugins')
+    if (!plugins || !Array.isArray(plugins)) {
+      console.error('[Window] 未找到插件列表')
+      return null
+    }
+    const settingPlugin = plugins.find((p: any) => p.name === 'setting')
+    if (!settingPlugin) {
+      console.error('[Window] 未找到设置插件')
+      return null
+    }
+    return settingPlugin
+  }
+
+  /**
+   * 打开插件安装页面（用于 .zpx 文件关联双击打开）
+   * 流程：激活应用 → 启动设置插件 → 导航到 PluginInstaller 页面 → 传入文件路径
+   * @param zpxPath .zpx 文件路径
+   */
+  public async openPluginInstaller(zpxPath: string): Promise<void> {
+    if (!this.mainWindow) return
+
+    console.log('[Window] 打开插件安装页面:', zpxPath)
+
+    // 临时抑制 blur 隐藏行为，防止窗口激活过程中被 blur 事件隐藏
+    this.suppressBlurHide = true
+
+    // macOS: 先显示 Dock 图标并激活应用，否则窗口无法获取焦点
+    if (platform.isMacOS) {
+      await app.dock?.show()
+      app.focus({ steal: true })
+    }
+
+    // 如果当前有插件在显示，先隐藏
+    if (pluginManager.getCurrentPluginPath() !== null) {
+      pluginManager.hidePluginView()
+      this.notifyBackToSearch()
+    }
+
+    try {
+      const settingPlugin = this.findSettingPlugin()
+      if (!settingPlugin) {
+        this.suppressBlurHide = false
+        return
+      }
+
+      // 启动设置插件，使用 install-plugin feature code
+      // payload 传入文件路径数组（与 "type": "files" cmd 格式一致）
+      const result = await api.launchPlugin({
+        path: settingPlugin.path,
+        type: 'plugin',
+        featureCode: 'function.install-plugin?router=PluginInstaller',
+        name: '安装插件',
+        cmdType: 'files',
+        param: {
+          code: 'function.install-plugin?router=PluginInstaller',
+          payload: [{ path: zpxPath }]
+        }
+      })
+
+      if (!result.success) {
+        console.error('[Window] 启动插件安装页面失败:', result.error)
+        this.suppressBlurHide = false
+        return
+      }
+
+      this.moveWindowToCursor()
+      // macOS: forceActivateWindow 不会 setAlwaysOnTop/focus，需要单独处理焦点抢占
+      this.mainWindow.show()
+      if (platform.isMacOS) {
+        this.mainWindow.focus()
+      } else {
+        this.forceActivateWindow()
+      }
+
+      // 延迟恢复 blur 隐藏行为，确保窗口已稳定获取焦点
+      setTimeout(() => {
+        this.suppressBlurHide = false
+      }, 500)
+    } catch (error) {
+      console.error('[Window] 打开插件安装页面失败:', error)
+      this.suppressBlurHide = false
     }
   }
 

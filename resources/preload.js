@@ -242,6 +242,14 @@ window.ztools = {
   showNotification: async (body) => {
     return await electron.ipcRenderer.invoke('show-notification', body)
   },
+  // 显示 toast 提示
+  showToast: async (message, options = {}) => {
+    const toastOptions = {
+      message,
+      ...options
+    }
+    return await electron.ipcRenderer.invoke('plugin:show-toast', toastOptions)
+  },
   // 设置插件高度
   setExpendHeight: async (height) => {
     return await electron.ipcRenderer.invoke('set-expend-height', height)

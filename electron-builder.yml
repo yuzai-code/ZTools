@@ -19,6 +19,11 @@ asarUnpack:
   - resources/**
   - '**/node_modules/sharp/**/*'
   - '**/node_modules/@img/**/*'
+fileAssociations:
+  - ext: zpx
+    name: ZTools Plugin
+    description: ZTools Plugin Package
+    role: Viewer
 win:
   executableName: ZTools
   artifactName: ${name}-${version}-${os}-${arch}.${ext}

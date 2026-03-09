@@ -20,14 +20,40 @@ if (process.platform === 'win32') {
 // 单例锁
 const gotTheLock = app.requestSingleInstanceLock()
 
+// 待打开的 .zpx 文件路径（在 app.ready 之前收到的文件打开事件）
+let pendingZpxFile: string | null = null
+
 if (!gotTheLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     // 当运行第二个实例时，焦点聚焦到这个实例
     windowManager.showWindow()
+
+    // Windows: 检查命令行参数中是否有 .zpx 文件路径
+    const zpxPath = argv.find((arg) => arg.endsWith('.zpx'))
+    if (zpxPath) {
+      console.log('[Main] 第二实例传入 ZPX 文件:', zpxPath)
+      windowManager.openPluginInstaller(zpxPath)
+    }
   })
 }
+
+// macOS: 监听文件打开事件（双击 .zpx 文件或拖拽到 Dock 图标）
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  if (!filePath.endsWith('.zpx')) return
+
+  console.log('[Main] 收到 open-file 事件:', filePath)
+
+  if (app.isReady()) {
+    // 应用已就绪，直接打开安装页面
+    windowManager.openPluginInstaller(filePath)
+  } else {
+    // 应用还未就绪，暂存路径等 ready 后处理
+    pendingZpxFile = filePath
+  }
+})
 
 // ========== 注册自定义协议为特权协议（必须在 app.ready 之前调用）==========
 registerIconScheme()
@@ -120,6 +146,18 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('[Main] 读取自动启动插件配置失败:', error)
     }
+  }
+
+  // 处理文件关联打开：macOS pending 文件 / Windows 命令行参数
+  const zpxFromArgs =
+    pendingZpxFile || process.argv.find((arg) => arg.endsWith('.zpx') && !arg.startsWith('-'))
+  if (zpxFromArgs) {
+    pendingZpxFile = null
+    // 等待窗口和插件系统完全初始化后再打开
+    setTimeout(() => {
+      console.log('[Main] 处理启动时的 ZPX 文件:', zpxFromArgs)
+      windowManager.openPluginInstaller(zpxFromArgs)
+    }, 1500)
   }
 })
 
