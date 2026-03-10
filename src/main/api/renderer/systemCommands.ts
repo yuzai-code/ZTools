@@ -5,6 +5,7 @@ import { promisify } from 'util'
 import { GLOBAL_SCROLLBAR_CSS } from '../../core/globalStyles'
 import windowManager from '../../managers/windowManager'
 import webSearchAPI from './webSearch'
+import databaseAPI from '../shared/database'
 
 interface SystemCommandContext {
   mainWindow: Electron.BrowserWindow | null
@@ -28,6 +29,9 @@ export async function executeSystemCommand(
   switch (command) {
     case 'clear':
       return handleClear(ctx)
+
+    case 'clear-history':
+      return handleClearHistory(ctx)
 
     case 'reboot':
       if (platform === 'darwin') {
@@ -109,6 +113,27 @@ function handleClear(ctx: SystemCommandContext): any {
   }
   ctx.mainWindow?.webContents.send('app-launched')
   return { success: true }
+}
+
+function handleClearHistory(ctx: SystemCommandContext): any {
+  console.log('[SystemCmd] 执行清除使用记录')
+  try {
+    // 清空历史记录
+    databaseAPI.dbPut('command-history', [])
+
+    // 通知渲染进程刷新历史记录
+    ctx.mainWindow?.webContents.send('history-changed')
+
+    // 触发 app-launched 事件（隐藏窗口）
+    ctx.mainWindow?.webContents.send('app-launched')
+    ctx.mainWindow?.hide()
+
+    console.log('[SystemCmd] 使用记录已清除')
+    return { success: true }
+  } catch (error) {
+    console.error('[SystemCmd] 清除使用记录失败:', error)
+    return { success: false, error: String(error) }
+  }
 }
 
 async function handleWebSearch(

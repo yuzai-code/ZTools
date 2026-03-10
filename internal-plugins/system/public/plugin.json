@@ -14,6 +14,12 @@
       "cmds": ["Clear", "停止所有插件"]
     },
     {
+      "code": "clear-history",
+      "explain": "清除使用记录",
+      "icon": "clear.png",
+      "cmds": ["清除使用记录", "Clear History"]
+    },
+    {
       "code": "reboot",
       "explain": "重启",
       "icon": "reboot.png",
