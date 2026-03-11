@@ -74,6 +74,7 @@ export interface Command {
   name: string
   path: string // 纯路径（应用路径 或 插件根目录路径）
   icon?: string
+  aliases?: string[]
   pinyin?: string
   pinyinAbbr?: string
   acronym?: string // 英文首字母缩写（用于搜索）
@@ -626,6 +627,7 @@ export const useCommandDataStore = defineStore('commandData', () => {
       fuse.value = new Fuse(commands.value, {
         keys: [
           { name: 'name', weight: 2 }, // 名称权重最高
+          { name: 'aliases', weight: 1.8 }, // 本地化别名
           { name: 'pinyin', weight: 1.5 }, // 拼音
           { name: 'pinyinAbbr', weight: 1 }, // 拼音首字母
           { name: 'acronym', weight: 1.5 } // 英文首字母缩写
@@ -679,6 +681,7 @@ export const useCommandDataStore = defineStore('commandData', () => {
         ? new Fuse(commandList, {
             keys: [
               { name: 'name', weight: 2 },
+              { name: 'aliases', weight: 1.8 },
               { name: 'pinyin', weight: 1.5 },
               { name: 'pinyinAbbr', weight: 1 },
               { name: 'acronym', weight: 1.5 }

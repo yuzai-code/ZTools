@@ -37,8 +37,6 @@ class ToastManager {
     // 获取主屏幕尺寸
     const primaryDisplay = screen.getPrimaryDisplay()
     const { width: screenWidth, height: screenHeight } = primaryDisplay.bounds
-    const { y: workAreaY } = primaryDisplay.workArea
-
     // 创建透明全屏容器窗口
     this.containerWindow = new BrowserWindow({
       width: screenWidth,

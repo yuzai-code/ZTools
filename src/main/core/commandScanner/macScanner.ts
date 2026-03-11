@@ -7,6 +7,15 @@ import { extractAcronym } from '../../utils/common'
 import { Command } from './types'
 import { pLimit } from './utils'
 
+interface LocalizedAppMetadata {
+  name: string
+  aliases?: string[]
+}
+
+function uniqueNonEmpty(values: Array<string | undefined | null>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])]
+}
+
 // 缓存系统语言对应的 lproj 目录名列表
 let _lprojNames: string[] | null = null
 // 缓存系统语言对应的 loctable key 列表
@@ -16,7 +25,7 @@ let _loctableKeys: string[] | null = null
 // 例如: "zh-Hans-CN" → ["zh-Hans", "zh-Hans_CN", "zh_CN"]
 //       "en-CN"      → ["en_CN", "en"]
 //       "ja-JP"      → ["ja", "Japanese", "ja_JP"]
-function bcp47ToLprojNames(tag: string): string[] {
+export function bcp47ToLprojNames(tag: string): string[] {
   const candidates: string[] = []
   // BCP 47 格式: language[-Script][-Region]
   const parts = tag.split('-')
@@ -39,6 +48,12 @@ function bcp47ToLprojNames(tag: string): string[] {
     if (region) {
       candidates.push(`zh-${script}_${region}`) // zh-Hans_CN
       candidates.push(`zh_${region}`) // zh_CN
+    } else if (script === 'Hans') {
+      candidates.push('zh_CN')
+      candidates.push('zh_SG')
+    } else if (script === 'Hant') {
+      candidates.push('zh_TW')
+      candidates.push('zh_HK')
     }
   }
 
@@ -72,6 +87,40 @@ function bcp47ToLprojNames(tag: string): string[] {
   return candidates
 }
 
+export function bcp47ToLoctableKeys(tag: string): string[] {
+  const candidates: string[] = []
+  const parts = tag.split('-')
+  const lang = parts[0]
+  let script: string | undefined
+  let region: string | undefined
+
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i]
+    if (p.length === 4 && p[0] === p[0].toUpperCase()) {
+      script = p
+    } else if (p.length === 2 && p === p.toUpperCase()) {
+      region = p
+    }
+  }
+
+  if (lang === 'zh' && script) {
+    if (region) {
+      candidates.push(`zh_${region}`)
+    }
+
+    if (script === 'Hans') {
+      candidates.push('zh_CN', 'zh_SG')
+    } else if (script === 'Hant') {
+      candidates.push('zh_TW', 'zh_HK')
+    }
+  } else if (region) {
+    candidates.push(`${lang}_${region}`)
+  }
+
+  candidates.push(lang)
+  return [...new Set(candidates)]
+}
+
 // 获取系统语言对应的 lproj 目录名候选列表
 function getLocaleLprojNames(): string[] {
   if (_lprojNames) return _lprojNames
@@ -98,26 +147,22 @@ function getLocaleLoctableKeys(): string[] {
   const candidates: string[] = []
 
   for (const tag of preferredLangs) {
-    const parts = tag.split('-')
-    const lang = parts[0]
-    let region: string | undefined
-
-    for (let i = 1; i < parts.length; i++) {
-      const p = parts[i]
-      if (p.length === 2 && p === p.toUpperCase()) {
-        region = p
-      }
-    }
-
-    // loctable 中的 key 格式: "zh_CN", "en", "ja" 等
-    if (region) {
-      candidates.push(`${lang}_${region}`)
-    }
-    candidates.push(lang)
+    candidates.push(...bcp47ToLoctableKeys(tag))
   }
 
   _loctableKeys = [...new Set(candidates)]
   return _loctableKeys
+}
+
+function extractLocalizedAliases(data?: Record<string, string> | null, name?: string): string[] {
+  if (!data) return []
+
+  const aliases = Object.entries(data)
+    .filter(([key, value]) => key.startsWith('APP_NAME_SYNONYM_') && typeof value === 'string')
+    .map(([, value]) => value.trim())
+    .filter(Boolean)
+
+  return [...new Set(aliases.filter((alias) => alias !== name))]
 }
 
 // 解析 .strings 文件内容
@@ -171,7 +216,9 @@ async function readStringsFile(filePath: string): Promise<Record<string, string>
 }
 
 // 从 .lproj 目录读取本地化应用名称
-async function getLocalizedNameFromLproj(appPath: string): Promise<string | null> {
+async function getLocalizedMetadataFromLproj(
+  appPath: string
+): Promise<LocalizedAppMetadata | null> {
   const lprojNames = getLocaleLprojNames()
 
   for (const lprojName of lprojNames) {
@@ -187,7 +234,12 @@ async function getLocalizedNameFromLproj(appPath: string): Promise<string | null
 
       const data = await readStringsFile(stringsPath)
       const name = data?.CFBundleDisplayName || data?.CFBundleName
-      if (name) return name
+      if (name) {
+        return {
+          name,
+          aliases: extractLocalizedAliases(data, name)
+        }
+      }
     } catch {
       continue
     }
@@ -197,7 +249,9 @@ async function getLocalizedNameFromLproj(appPath: string): Promise<string | null
 }
 
 // 从 InfoPlist.loctable 读取本地化应用名称（新版 macOS 系统应用使用此格式）
-async function getLocalizedNameFromLoctable(appPath: string): Promise<string | null> {
+async function getLocalizedMetadataFromLoctable(
+  appPath: string
+): Promise<LocalizedAppMetadata | null> {
   const loctablePath = path.join(appPath, 'Contents', 'Resources', 'InfoPlist.loctable')
   if (!fsSync.existsSync(loctablePath)) return null
 
@@ -213,7 +267,12 @@ async function getLocalizedNameFromLoctable(appPath: string): Promise<string | n
     for (const key of keys) {
       const entry = data?.[key]
       const name = entry?.CFBundleDisplayName || entry?.CFBundleName
-      if (name) return name
+      if (name) {
+        return {
+          name,
+          aliases: extractLocalizedAliases(entry, name)
+        }
+      }
     }
   } catch {
     // ignore
@@ -223,17 +282,16 @@ async function getLocalizedNameFromLoctable(appPath: string): Promise<string | n
 }
 
 // 获取本地化应用名称（先尝试 lproj，再尝试 loctable）
-async function getLocalizedName(appPath: string): Promise<string | null> {
-  return (await getLocalizedNameFromLproj(appPath)) ?? (await getLocalizedNameFromLoctable(appPath))
+async function getLocalizedMetadata(appPath: string): Promise<LocalizedAppMetadata | null> {
+  return (
+    (await getLocalizedMetadataFromLproj(appPath)) ??
+    (await getLocalizedMetadataFromLoctable(appPath))
+  )
 }
 
-// 获取应用显示名称（优先本地化名称，无需子进程）
-async function getAppDisplayName(appPath: string): Promise<string> {
-  // 1. 尝试从 .lproj 获取本地化名称（如 "时钟"、"访达"）
-  const localizedName = await getLocalizedName(appPath)
-  if (localizedName) return localizedName
+async function getBundleNames(appPath: string): Promise<string[]> {
+  const fileName = path.basename(appPath, '.app')
 
-  // 2. 从 Info.plist 读取 CFBundleDisplayName / CFBundleName
   try {
     const data: any = await new Promise((resolve, reject) => {
       const plistPath = path.join(appPath, 'Contents', 'Info.plist')
@@ -242,13 +300,31 @@ async function getAppDisplayName(appPath: string): Promise<string> {
         else resolve(result)
       })
     })
-    const name = data?.CFBundleDisplayName || data?.CFBundleName
-    if (name) return name
+
+    return uniqueNonEmpty([data?.CFBundleDisplayName, data?.CFBundleName, fileName])
   } catch {
-    // ignore
+    return uniqueNonEmpty([fileName])
   }
-  // 3. 兜底：使用文件名
-  return path.basename(appPath, '.app')
+}
+
+// 获取应用显示名称（优先本地化名称，无需子进程）
+async function getAppDisplayInfo(appPath: string): Promise<LocalizedAppMetadata> {
+  const bundleNames = await getBundleNames(appPath)
+
+  // 1. 尝试从 .lproj 获取本地化名称（如 "时钟"、"访达"）
+  const localizedMetadata = await getLocalizedMetadata(appPath)
+  if (localizedMetadata?.name) {
+    return {
+      name: localizedMetadata.name,
+      aliases: uniqueNonEmpty([...bundleNames, ...(localizedMetadata.aliases || [])]).filter(
+        (alias) => alias !== localizedMetadata.name
+      )
+    }
+  }
+
+  // 2. 兜底：使用 bundle 原名 / 文件名
+  const [name, ...aliases] = bundleNames
+  return { name, aliases }
 }
 
 // 获取应用图标文件路径
@@ -327,7 +403,10 @@ export async function scanApplications(): Promise<Command[]> {
     // 创建任务数组,使用并发控制
     const tasks = allAppPaths.map((appPath) => async () => {
       try {
-        const name = await getAppDisplayName(appPath)
+        const { name, aliases } = await getAppDisplayInfo(appPath)
+        const acronymSource = [name, ...(aliases || [])].find(
+          (value) => extractAcronym(value) !== ''
+        )
 
         // 获取图标文件路径
         const iconPath = await getIconFile(appPath)
@@ -339,7 +418,8 @@ export async function scanApplications(): Promise<Command[]> {
           name,
           path: appPath,
           icon: iconUrl,
-          acronym: extractAcronym(name)
+          aliases,
+          acronym: acronymSource ? extractAcronym(acronymSource) : ''
         }
       } catch {
         const defaultIconPath =

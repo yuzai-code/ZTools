@@ -30,6 +30,8 @@ interface LastMatchState {
  * 应用管理API - 主程序专用
  */
 export class AppsAPI {
+  private static readonly APP_CACHE_VERSION = 3
+  private static readonly APP_CACHE_VERSION_KEY = 'cached-commands-version'
   private mainWindow: Electron.BrowserWindow | null = null
   private pluginManager: PluginManager | null = null
   private launchParam: any = null
@@ -163,6 +165,7 @@ export class AppsAPI {
     // 尝试从数据库缓存读取
     try {
       const cachedApps = databaseAPI.dbGet('cached-commands')
+      const cacheVersion = databaseAPI.dbGet(AppsAPI.APP_CACHE_VERSION_KEY)
       if (cachedApps && Array.isArray(cachedApps) && cachedApps.length > 0) {
         // 检查缓存的图标格式是否为新协议
         // 只要有一个应用使用了旧的文件路径格式（且不是 .png 结尾的静态资源），就视为旧缓存
@@ -180,7 +183,9 @@ export class AppsAPI {
             )
         )
 
-        if (hasOldFormat) {
+        if (cacheVersion !== AppsAPI.APP_CACHE_VERSION) {
+          console.log('[Commands] 检测到旧版应用缓存，将重新扫描以刷新本地化名称索引...')
+        } else if (hasOldFormat) {
           console.log('[Commands] 检测到旧格式图标缓存，将重新扫描并更新为 ztools-icon 协议...')
         } else {
           console.log(`从缓存读取到 ${cachedApps.length} 个应用`)
@@ -237,6 +242,7 @@ export class AppsAPI {
     // 保存到数据库缓存
     try {
       databaseAPI.dbPut('cached-commands', apps)
+      databaseAPI.dbPut(AppsAPI.APP_CACHE_VERSION_KEY, AppsAPI.APP_CACHE_VERSION)
       console.log('[Commands] 应用列表已缓存到数据库')
     } catch (error) {
       console.error('[Commands] 缓存应用列表失败:', error)
@@ -521,7 +527,7 @@ export class AppsAPI {
    */
   private async addToHistory(options: {
     path: string
-    type?: 'app' | 'plugin' | 'builtin'
+    type?: 'app' | 'plugin' | 'builtin' | 'file'
     featureCode?: string
     param?: any
     name?: string // cmd 名称（用于历史记录显示）
