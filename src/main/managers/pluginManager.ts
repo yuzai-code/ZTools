@@ -34,6 +34,12 @@ interface PluginViewInfo {
   logo?: string
   isDevelopment?: boolean
   backgroundRunning?: boolean // plugin.json pluginSetting.backgroundRunning，后台不节流
+  single?: boolean // plugin.json pluginSetting.single, true/默认 = 单例不可多开, false = 允许多开
+}
+
+interface PluginLastEnterState {
+  featureCode: string
+  cmdType: string
 }
 
 export class PluginManager {
@@ -60,6 +66,20 @@ export class PluginManager {
   private readPluginConfig(pluginPath: string): any {
     const pluginJsonPath = path.join(pluginPath, 'plugin.json')
     return JSON.parse(fsSync.readFileSync(pluginJsonPath, 'utf-8'))
+  }
+
+  /**
+   * 判断插件是否允许多开（pluginSetting.single 默认/true = 不可多开, false = 允许多开）
+   */
+  private isPluginMultiOpenAllowed(pluginPath: string): boolean {
+    const cached = this.pluginViews.find((v) => v.path === pluginPath)
+    if (cached) return cached.single === false
+    try {
+      const pluginConfig = this.readPluginConfig(pluginPath)
+      return pluginConfig.pluginSetting?.single === false
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -201,6 +221,8 @@ export class PluginManager {
   private lastPluginEscTime: number | null = null
   // 插件默认高度（可配置）
   private pluginDefaultHeight: number = WINDOW_DEFAULT_HEIGHT - WINDOW_INITIAL_HEIGHT
+  // 跟踪每个插件上次进入的状态（用于单例重入判断）
+  private pluginLastEnterState: Map<string, PluginLastEnterState> = new Map()
 
   /**
    * 获取插件默认高度
@@ -214,6 +236,28 @@ export class PluginManager {
    */
   public setPluginDefaultHeight(height: number): void {
     this.pluginDefaultHeight = Math.max(200, height) // 最小 200px
+  }
+
+  /**
+   * 判断是否跳过重入（同文本指令 + 同 featureCode → true）
+   */
+  private shouldSkipReEnter(pluginPath: string, featureCode: string): boolean {
+    const lastState = this.pluginLastEnterState.get(pluginPath)
+    if (!lastState) return false
+    const currentCmdType = api.getLaunchParam()?.type || 'text'
+    return (
+      lastState.cmdType === 'text' &&
+      currentCmdType === 'text' &&
+      lastState.featureCode === featureCode
+    )
+  }
+
+  /**
+   * 记录插件进入状态（用于单例重入判断）
+   */
+  private recordEnterState(pluginPath: string, featureCode: string): void {
+    const cmdType = api.getLaunchParam()?.type || 'text'
+    this.pluginLastEnterState.set(pluginPath, { featureCode, cmdType })
   }
 
   public init(mainWindow: BrowserWindow): void {
@@ -254,6 +298,12 @@ export class PluginManager {
     if (this.currentPluginPath === pluginPath) {
       const cached = this.pluginViews.find((v) => v.path === pluginPath)
       if (cached) {
+        // 单例重入：同文本指令 + 同 featureCode → 仅保持当前状态，不重新触发
+        if (this.shouldSkipReEnter(pluginPath, featureCode)) {
+          console.log('[Plugin] 同文本指令重入，跳过 onPluginEnter:', { pluginPath, featureCode })
+          this.assemblyCoordinator.abortCurrentSession('singleton-skip-reenter')
+          return
+        }
         this.assemblyCoordinator.trace('reuse-current-plugin-view', {
           assemblyId: assembly.id,
           pluginPath,
@@ -262,6 +312,30 @@ export class PluginManager {
         await this.processPluginMode(pluginPath, featureCode, cached.view, assembly)
       }
       return
+    }
+
+    // 单例检查：插件不允许多开 且 已有分离窗口 → 聚焦已有窗口，按需触发 onPluginEnter
+    if (!this.isPluginMultiOpenAllowed(pluginPath)) {
+      const detachedView = detachedWindowManager.getViewByPlugin(pluginPath)
+      if (detachedView) {
+        detachedWindowManager.focusByPlugin(pluginPath)
+        if (!this.shouldSkipReEnter(pluginPath, featureCode)) {
+          console.log('[Plugin] 单例分离窗口重入，触发 onPluginEnter:', { pluginPath, featureCode })
+          const enterPayload = this.assemblyCoordinator.buildEnterPayload(
+            api.getLaunchParam() as EnterPayload
+          )
+          await this.assemblyCoordinator.dispatchLifecycleEvent(
+            detachedView,
+            'PluginEnter',
+            enterPayload
+          )
+          this.recordEnterState(pluginPath, featureCode)
+        } else {
+          console.log('[Plugin] 单例分离窗口同文本指令重入，仅聚焦:', pluginPath)
+        }
+        this.assemblyCoordinator.abortCurrentSession('singleton-focus-detached')
+        return
+      }
     }
 
     // 先尝试从缓存中复用已有视图
@@ -407,7 +481,8 @@ export class PluginManager {
         subInputVisible: false,
         logo: logoUrl,
         isDevelopment,
-        backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning
+        backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning,
+        single: pluginConfig.pluginSetting?.single
       }
       this.pluginViews.push(pluginInfo)
       this.currentPluginPath = pluginPath
@@ -526,6 +601,7 @@ export class PluginManager {
       if (index !== -1) {
         this.assemblyCoordinator.clearDomReady(this.pluginViews[index].view.webContents.id)
         this.pluginViews.splice(index, 1)
+        this.pluginLastEnterState.delete(pluginPath)
         console.log('[Plugin] 已从缓存中移除崩溃的插件:', pluginPath)
       }
 
@@ -664,7 +740,8 @@ export class PluginManager {
         subInputVisible: false,
         logo: logoUrl,
         isDevelopment,
-        backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning
+        backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning,
+        single: pluginConfig.pluginSetting?.single
       }
       this.pluginViews.push(pluginInfo)
 
@@ -756,6 +833,7 @@ export class PluginManager {
 
         // 从缓存中移除
         this.pluginViews.splice(index, 1)
+        this.pluginLastEnterState.delete(pluginPath)
 
         console.log('[Plugin] 插件已终止:', pluginPath)
         console.log('[Plugin] killPlugin 完成:', {
@@ -773,6 +851,7 @@ export class PluginManager {
         pluginWindowManager.closeByPlugin(pluginPath)
         // 关闭分离窗口（内部会销毁 webContents）
         detachedWindowManager.closeByPlugin(pluginPath)
+        this.pluginLastEnterState.delete(pluginPath)
         console.log('[Plugin] 分离窗口插件已终止:', pluginPath)
         return true
       }
@@ -831,6 +910,7 @@ export class PluginManager {
     this.pluginView = null
     this.currentPluginPath = null
     this.assemblyCoordinator.clearCurrentSession()
+    this.pluginLastEnterState.clear()
 
     // 关闭所有分离窗口中的插件
     detachedWindowManager.closeAll()
@@ -1056,6 +1136,7 @@ export class PluginManager {
       // 无界面插件，调用插件方法
       this.setExpendHeight(0, false) // 不更新缓存，保留上次的 UI 高度
       this.callHeadlessPluginMethod(pluginPath, featureCode, api.getLaunchParam())
+      this.recordEnterState(pluginPath, featureCode)
       this.assemblyCoordinator.trace('process-mode-headless', {
         assemblyId: assembly?.id,
         pluginPath,
@@ -1102,6 +1183,7 @@ export class PluginManager {
       )
       await this.assemblyCoordinator.dispatchLifecycleEvent(view, 'PluginReady')
       await this.assemblyCoordinator.dispatchLifecycleEvent(view, 'PluginEnter', enterPayload)
+      this.recordEnterState(pluginPath, featureCode)
       this.assemblyCoordinator.trace('process-mode-enter-dispatched', {
         assemblyId: assembly?.id,
         pluginPath,
@@ -1341,6 +1423,32 @@ export class PluginManager {
     try {
       console.log('[Plugin] 直接在独立窗口中创建插件:', { pluginPath, featureCode })
 
+      // 单例检查：插件不允许多开 且 已有分离窗口 → 聚焦已有窗口，按需触发 onPluginEnter
+      if (!this.isPluginMultiOpenAllowed(pluginPath)) {
+        const detachedView = detachedWindowManager.getViewByPlugin(pluginPath)
+        if (detachedView) {
+          detachedWindowManager.focusByPlugin(pluginPath)
+          if (!this.shouldSkipReEnter(pluginPath, featureCode)) {
+            console.log('[Plugin] 独立窗口单例重入，触发 onPluginEnter:', {
+              pluginPath,
+              featureCode
+            })
+            const enterPayload = this.assemblyCoordinator.buildEnterPayload(
+              api.getLaunchParam() as EnterPayload
+            )
+            await this.assemblyCoordinator.dispatchLifecycleEvent(
+              detachedView,
+              'PluginEnter',
+              enterPayload
+            )
+            this.recordEnterState(pluginPath, featureCode)
+          } else {
+            console.log('[Plugin] 独立窗口单例同文本指令重入，仅聚焦:', pluginPath)
+          }
+          return { success: true }
+        }
+      }
+
       const pluginInfoFromDB = this.fetchPluginInfoFromDB(pluginPath)
       const pluginConfig = this.readPluginConfig(pluginPath)
       const isDevelopment = !!pluginInfoFromDB?.isDevelopment
@@ -1408,6 +1516,7 @@ export class PluginManager {
           'PluginEnter',
           enterPayload
         )
+        this.recordEnterState(pluginPath, featureCode)
       })
 
       console.log('[Plugin] 插件已在独立窗口中创建:', pluginConfig.name)

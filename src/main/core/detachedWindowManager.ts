@@ -457,6 +457,33 @@ class DetachedWindowManager {
   }
 
   /**
+   * 聚焦指定插件的分离窗口（单例模式使用）
+   * 如果插件已有分离窗口，则聚焦该窗口并返回 true
+   */
+  public focusByPlugin(pluginPath: string): boolean {
+    for (const windowInfo of this.detachedWindowMap.values()) {
+      if (windowInfo.pluginPath === pluginPath && !windowInfo.window.isDestroyed()) {
+        if (windowInfo.window.isMinimized()) windowInfo.window.restore()
+        windowInfo.window.focus()
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * 获取指定插件的分离窗口中的 WebContentsView（单例重入使用）
+   */
+  public getViewByPlugin(pluginPath: string): WebContentsView | null {
+    for (const windowInfo of this.detachedWindowMap.values()) {
+      if (windowInfo.pluginPath === pluginPath && !windowInfo.window.isDestroyed()) {
+        return windowInfo.view
+      }
+    }
+    return null
+  }
+
+  /**
    * 关闭指定插件的所有分离窗口
    */
   public closeByPlugin(pluginPath: string): void {
