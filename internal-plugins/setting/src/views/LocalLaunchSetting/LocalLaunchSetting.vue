@@ -2,8 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useToast, AdaptiveIcon } from '@/components'
 import { weightedSearch } from '@/utils'
-import { useHistoryState, useJumpFunction, useZtoolsSubInput } from '@/composables'
-import { onBeforeRouteUpdate } from 'vue-router'
+import { useJumpFunction, useZtoolsSubInput } from '@/composables'
 
 const emit = defineEmits<{
   'pending-files-consumed': []
