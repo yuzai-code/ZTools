@@ -62,6 +62,20 @@ export class PluginShellAPI {
       }
     })
 
+    // 播放系统提示音（同步）
+    ipcMain.on('shell-beep', (event) => {
+      try {
+        shell.beep()
+        event.returnValue = { success: true }
+      } catch (error: unknown) {
+        console.error('[PluginShell] 播放系统提示音失败:', error)
+        event.returnValue = {
+          success: false,
+          error: error instanceof Error ? error.message : '未知错误'
+        }
+      }
+    })
+
     // 将文件移动到回收站（异步）
     ipcMain.handle('shell-trash-item', async (_event, fullPath: string) => {
       try {
