@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useToast } from '@/components'
-import { useHistoryState } from '@/composables'
-import { onBeforeRouteUpdate } from 'vue-router'
+import { useJumpFunction } from '@/composables'
+import { PluginInstallerJumpFunction } from '@/views/PluginInstaller/PluginInstaller'
 
 interface PluginInfo {
   name: string
@@ -82,19 +82,11 @@ async function confirmInstall(): Promise<void> {
   }
 }
 
-const handleJumpZtoolsCode = (): void => {
-  const state = useHistoryState<{ installFilePath: string }>()
+useJumpFunction<PluginInstallerJumpFunction>((state) => {
   if (state.installFilePath) {
     console.log(state.installFilePath)
     loadPluginInfo(state.installFilePath)
   }
-}
-
-onMounted(() => {
-  handleJumpZtoolsCode()
-})
-onBeforeRouteUpdate(() => {
-  handleJumpZtoolsCode()
 })
 </script>
 <template>

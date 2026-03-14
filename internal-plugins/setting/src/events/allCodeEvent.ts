@@ -2,6 +2,7 @@ import { addZtoolsCodeEventListener } from '@/events/codeEvent'
 import { jumpFunctionPluginInstaller } from '@/views/PluginInstaller/PluginInstaller'
 import { jumpFunctionPluginMarketSetting } from '@/views/PluginMarketSetting/PluginMarketSetting'
 import { jumpFunctionPluginsSetting } from '@/views/PluginsSetting/PluginsSetting'
+import { jumpLocalLaunchSettingJumpFunction } from '@/views/LocalLaunchSetting/LocalLaunchSetting'
 
 /**
  * 将文件和文件夹添加到本地启动
@@ -13,10 +14,8 @@ addZtoolsCodeEventListener('function.local-launch-add', (e) => {
   const pendingFiles = files
     .map((file: { path?: string }) => file.path?.trim())
     .filter((path): path is string => Boolean(path))
-  void e.router.replace({
-    name: e.getParamsKey('router'),
-    query: { _t: Date.now() },
-    state: { pendingFiles }
+  jumpLocalLaunchSettingJumpFunction({
+    pendingFiles
   })
 })
 
