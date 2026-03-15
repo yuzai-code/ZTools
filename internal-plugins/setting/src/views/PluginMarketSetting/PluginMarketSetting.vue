@@ -239,7 +239,7 @@ function handleKeydown(e: KeyboardEvent): void {
 }
 
 useJumpFunction<PluginMarketSettingJumpFunction>((state) => {
-  if (state.payload) {
+  if (state.payload && state.type === 'over') {
     setSubInput(state.payload)
   }
 })
@@ -285,7 +285,7 @@ onUnmounted(() => {
           >
             <div class="plugin-icon">
               <AdaptiveIcon
-                :src="plugin.logo"
+                :src="plugin.logo ?? ''"
                 class="plugin-logo-img"
                 alt="icon"
                 draggable="false"

@@ -358,7 +358,6 @@ export class SyncEngine {
           try {
             metadata = JSON.parse(extData)
             // 移除同步状态字段，只保留原始元数据
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { _cloudSynced, _lastModified, ...originalMetadata } = metadata
             metadata = originalMetadata
           } catch {
@@ -668,7 +667,6 @@ export class SyncEngine {
       // 如果文档不存在且需要创建，或者文档内容有变化
       if (doc) {
         // 移除同步字段，这些字段存储在 metaDb 中
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { _cloudSynced, _lastModified, ...docWithoutSyncFields } = doc
         mainDb.putSync(docId, JSON.stringify(docWithoutSyncFields))
       }

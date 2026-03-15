@@ -8,6 +8,10 @@ export interface PluginMarketSettingJumpFunction {
    * 自动打开详情的插件名称
    */
   payload?: string
+  /**
+   * 类型
+   */
+  type?: string
 }
 
 /**

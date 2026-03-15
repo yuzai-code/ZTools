@@ -3,8 +3,7 @@ import {
   shouldSkipShortcut,
   getIconUrl,
   deduplicateCommands,
-  SKIP_FOLDERS,
-  SKIP_NAME_PATTERN
+  SKIP_FOLDERS
 } from '../../src/main/core/commandScanner/windowsScanner'
 
 // ========== shouldSkipShortcut ==========

@@ -1,7 +1,6 @@
 import { addZtoolsCodeEventListener } from '@/events/codeEvent'
 import { jumpFunctionPluginInstaller } from '@/views/PluginInstaller/PluginInstaller'
 import { jumpFunctionPluginMarketSetting } from '@/views/PluginMarketSetting/PluginMarketSetting'
-import { jumpFunctionPluginsSetting } from '@/views/PluginsSetting/PluginsSetting'
 import { jumpLocalLaunchSettingJumpFunction } from '@/views/LocalLaunchSetting/LocalLaunchSetting'
 
 /**
@@ -39,17 +38,10 @@ addZtoolsCodeEventListener('function.add-dev-plugin', (e) => {
  * 插件市场搜索
  */
 addZtoolsCodeEventListener('function.plugin-market-search', async (e) => {
-  const { payload, code } = e.pluginEnterParams
+  const { payload, code, type } = e.pluginEnterParams
   console.info(`[code-event] ${code} 成功接收事件`, payload)
-  const pluginList = await window.ztools.internal.getPlugins()
   if (payload) {
-    const pluginInfo = pluginList.find((item) => item.name === payload)
-    console.log(pluginInfo)
-    if (pluginInfo) {
-      jumpFunctionPluginsSetting({ payload })
-    } else {
-      jumpFunctionPluginMarketSetting({ payload })
-    }
+    jumpFunctionPluginMarketSetting({ payload, type })
   }
 })
 

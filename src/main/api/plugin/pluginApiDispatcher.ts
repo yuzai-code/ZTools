@@ -1,5 +1,7 @@
 import { ipcMain } from 'electron'
 
+type ApiHandler = (...args: any[]) => any
+
 /**
  * 单一 API 注册表（与 utools pluginApiServices 一致）
  *
@@ -9,13 +11,13 @@ import { ipcMain } from 'electron'
  *
  * 每个 API name 只对应一种调用方式，没有冲突。
  */
-const pluginApiServices: Record<string, Function> = {}
+const pluginApiServices: Record<string, ApiHandler> = {}
 
 /**
  * 注册插件 API 服务
  * 多个模块各自调用此方法注册自己的 API，最终合并到同一个 pluginApiServices。
  */
-export function registerPluginApiServices(services: Record<string, Function>): void {
+export function registerPluginApiServices(services: Record<string, ApiHandler>): void {
   for (const key of Object.keys(services)) {
     if (pluginApiServices[key]) {
       console.warn(`[plugin.api:register] API "${key}" is being overwritten`)

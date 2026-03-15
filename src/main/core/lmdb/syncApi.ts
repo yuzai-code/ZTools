@@ -57,7 +57,6 @@ export class SyncApi {
       }
 
       // 4. 移除文档中的同步字段（这些字段应该存储在 metaDb 中）
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { _cloudSynced, _lastModified, ...docWithoutSyncFields } = doc
 
       // 5. 使用事务保证原子性

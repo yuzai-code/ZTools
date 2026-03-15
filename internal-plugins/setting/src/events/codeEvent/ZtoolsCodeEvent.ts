@@ -112,12 +112,14 @@ export function initZtoolsBaseEventHandler(options: InitBaseEventHandlerOptions 
 
   addZtoolsCodeEventListener('ui.router', (e) => {
     console.log('[code-event] ui.router 收到消息', e)
-    const payload = e.pluginEnterParams.payload
     e.router
       .replace({
         name: e.getParamsKey('router'),
         query: { ...e.params, t: Date.now() },
-        state: payload ? { payload } : undefined
+        state: {
+          payload: e.pluginEnterParams.payload,
+          type: e.pluginEnterParams.type
+        }
       })
       .then(() => {})
     if (height) {
