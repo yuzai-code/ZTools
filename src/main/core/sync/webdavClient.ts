@@ -1,5 +1,5 @@
 import { createClient, WebDAVClient } from 'webdav'
-import { SyncConfig, RemoteFileMeta } from './types'
+import { SyncConfig, RemoteFileMeta, RemotePluginManifest } from './types'
 
 /**
  * WebDAV 同步客户端
@@ -56,6 +56,13 @@ export class WebDAVSyncClient {
     const attachmentExists = await this.client.exists(attachmentPath)
     if (!attachmentExists) {
       await this.client.createDirectory(attachmentPath)
+    }
+
+    // 确保插件目录存在
+    const pluginsPath = '/ztools-sync/plugins'
+    const pluginsExists = await this.client.exists(pluginsPath)
+    if (!pluginsExists) {
+      await this.client.createDirectory(pluginsPath)
     }
   }
 
@@ -258,5 +265,103 @@ export class WebDAVSyncClient {
         const encodedId = item.basename.replace('.bin', '')
         return decodeURIComponent(encodedId)
       })
+  }
+
+  // ==================== 插件同步相关方法 ====================
+
+  /**
+   * 上传插件 zip 到云端
+   */
+  async uploadPluginZip(pluginName: string, zipBuffer: Buffer): Promise<void> {
+    if (!this.client) {
+      throw new Error('WebDAV 客户端未初始化')
+    }
+
+    const encoded = encodeURIComponent(pluginName)
+    const remotePath = `/ztools-sync/plugins/${encoded}.zip`
+
+    try {
+      await this.client.putFileContents(remotePath, zipBuffer, {
+        overwrite: true
+      })
+    } catch (error: any) {
+      console.error(`[WebDAV] 上传插件 zip 失败: ${pluginName}`, error.message)
+      throw error
+    }
+  }
+
+  /**
+   * 从云端下载插件 zip
+   */
+  async downloadPluginZip(pluginName: string): Promise<Buffer | null> {
+    if (!this.client) {
+      throw new Error('WebDAV 客户端未初始化')
+    }
+
+    const encoded = encodeURIComponent(pluginName)
+    const remotePath = `/ztools-sync/plugins/${encoded}.zip`
+    const exists = await this.client.exists(remotePath)
+    if (!exists) return null
+
+    const data = (await this.client.getFileContents(remotePath, {
+      format: 'binary'
+    })) as Buffer
+
+    return Buffer.from(data)
+  }
+
+  /**
+   * 删除云端插件 zip
+   */
+  async deletePluginZip(pluginName: string): Promise<void> {
+    if (!this.client) {
+      throw new Error('WebDAV 客户端未初始化')
+    }
+
+    const encoded = encodeURIComponent(pluginName)
+    const remotePath = `/ztools-sync/plugins/${encoded}.zip`
+    const exists = await this.client.exists(remotePath)
+    if (exists) {
+      await this.client.deleteFile(remotePath)
+    }
+  }
+
+  /**
+   * 上传插件清单到云端
+   */
+  async uploadPluginManifest(manifest: RemotePluginManifest): Promise<void> {
+    if (!this.client) {
+      throw new Error('WebDAV 客户端未初始化')
+    }
+
+    const remotePath = '/ztools-sync/plugins/manifest.json'
+    const content = JSON.stringify(manifest, null, 2)
+
+    await this.client.putFileContents(remotePath, content, {
+      overwrite: true
+    })
+  }
+
+  /**
+   * 从云端下载插件清单
+   */
+  async downloadPluginManifest(): Promise<RemotePluginManifest> {
+    if (!this.client) {
+      throw new Error('WebDAV 客户端未初始化')
+    }
+
+    const remotePath = '/ztools-sync/plugins/manifest.json'
+    const exists = await this.client.exists(remotePath)
+    if (!exists) return {}
+
+    try {
+      const content = (await this.client.getFileContents(remotePath, {
+        format: 'text'
+      })) as string
+      return JSON.parse(content)
+    } catch (error) {
+      console.warn('[WebDAV] 解析插件清单失败:', error)
+      return {}
+    }
   }
 }

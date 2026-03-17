@@ -1,10 +1,11 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { SyncEngine } from '../../core/sync/syncEngine'
 import { SyncConfig } from '../../core/sync/types'
 import lmdbInstance from '../../core/lmdb/lmdbInstance'
 import { safeStorage } from 'electron'
 import pluginDeviceAPI from '../plugin/device'
 import { WebDAVSyncClient } from '../../core/sync/webdavClient'
+import pluginSyncWatcher from '../../core/sync/pluginSyncWatcher'
 
 /**
  * 同步 API
@@ -12,8 +13,11 @@ import { WebDAVSyncClient } from '../../core/sync/webdavClient'
 export class SyncAPI {
   private syncEngine: SyncEngine | null = null
 
-  public init(): void {
+  public init(mainWindow?: BrowserWindow): void {
     this.syncEngine = new SyncEngine(lmdbInstance)
+    if (mainWindow) {
+      this.syncEngine.setMainWindow(mainWindow)
+    }
     this.setupIPC()
 
     // 应用启动时初始化同步引擎
@@ -55,6 +59,13 @@ export class SyncAPI {
           await this.syncEngine!.init()
         } else {
           this.syncEngine!.stopAutoSync()
+        }
+
+        // 管理插件同步监听器生命周期
+        if (config.enabled && config.syncPlugins) {
+          pluginSyncWatcher.start()
+        } else {
+          pluginSyncWatcher.stop()
         }
 
         return { success: true }

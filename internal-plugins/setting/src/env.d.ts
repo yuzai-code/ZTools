@@ -282,6 +282,7 @@ declare global {
             password: string
             syncInterval: number
             lastSyncTime: number
+            syncPlugins?: boolean
           }
           error?: string
         }>
@@ -308,6 +309,7 @@ declare global {
           username: string
           password: string
           syncInterval: number
+          syncPlugins?: boolean
         }) => Promise<{
           success: boolean
           error?: string
@@ -318,6 +320,9 @@ declare global {
             uploaded: number
             downloaded: number
             errors: number
+            pluginsUploaded?: number
+            pluginsDownloaded?: number
+            pluginsDeleted?: number
           }
           error?: string
         }>

@@ -1,7 +1,14 @@
 import { WebDAVSyncClient } from './webdavClient'
 import { SyncConfig, SyncResult } from './types'
 import LmdbDatabase from '../lmdb/index'
-import { safeStorage } from 'electron'
+import { app, BrowserWindow, safeStorage } from 'electron'
+import { computePluginHash, loadHashRecords, saveHashRecords, getZipPath } from './pluginHasher'
+import pluginSyncWatcher from './pluginSyncWatcher'
+import AdmZip from 'adm-zip'
+import fs from 'fs'
+import path from 'path'
+
+const PLUGIN_DIR = path.join(app.getPath('userData'), 'plugins')
 
 /**
  * 同步引擎
@@ -10,10 +17,18 @@ export class SyncEngine {
   private webdavClient: WebDAVSyncClient
   private db: LmdbDatabase
   private syncTimer: NodeJS.Timeout | null = null
+  private mainWindow: BrowserWindow | null = null
 
   constructor(db: LmdbDatabase) {
     this.db = db
     this.webdavClient = new WebDAVSyncClient()
+  }
+
+  /**
+   * 设置主窗口引用（用于发送 plugins-changed 事件）
+   */
+  setMainWindow(mainWindow: BrowserWindow): void {
+    this.mainWindow = mainWindow
   }
 
   /**
@@ -43,6 +58,11 @@ export class SyncEngine {
 
     // 启动定时同步
     this.startAutoSync(config.syncInterval)
+
+    // 如果启用了插件同步，启动插件目录监听
+    if (config.syncPlugins) {
+      pluginSyncWatcher.start()
+    }
 
     console.log('[Sync] 同步引擎初始化完成')
   }
@@ -135,6 +155,16 @@ export class SyncEngine {
           downloadAttachmentResult.errors
       }
 
+      // 6. 插件文件同步
+      const config = await this.loadSyncConfig()
+      if (config?.syncPlugins) {
+        const pluginResult = await this.syncPlugins(config)
+        result.pluginsUploaded = pluginResult.pluginsUploaded
+        result.pluginsDownloaded = pluginResult.pluginsDownloaded
+        result.pluginsDeleted = pluginResult.pluginsDeleted
+        result.errors += pluginResult.errors
+      }
+
       console.log('[Sync] 同步完成:', result)
       return result
     } catch (error) {
@@ -184,6 +214,45 @@ export class SyncEngine {
         }
       }
 
+      // 如果启用了插件同步，强制从远端下载所有插件
+      let pluginsDownloaded = 0
+      const config = await this.loadSyncConfig()
+      if (config?.syncPlugins) {
+        try {
+          pluginSyncWatcher.pause()
+          const remoteManifest = await this.webdavClient.downloadPluginManifest()
+          const hashRecords = loadHashRecords()
+
+          for (const [pluginName, entry] of Object.entries(remoteManifest)) {
+            try {
+              console.log(`[Sync] 强制下载插件: ${pluginName}`)
+              const zipBuffer = await this.webdavClient.downloadPluginZip(pluginName)
+              if (!zipBuffer) {
+                console.warn(`[Sync] 远端插件 zip 不存在: ${pluginName}`)
+                continue
+              }
+
+              await this.installPluginFromSyncZip(pluginName, zipBuffer)
+
+              hashRecords[pluginName] = {
+                hash: entry.hash,
+                version: entry.version,
+                lastSyncTime: Date.now()
+              }
+
+              pluginsDownloaded++
+            } catch (err) {
+              console.error(`[Sync] 强制下载插件失败: ${pluginName}`, err)
+              errors++
+            }
+          }
+
+          saveHashRecords(hashRecords)
+        } finally {
+          pluginSyncWatcher.resume()
+        }
+      }
+
       // 更新同步时间
       await this.updateLastSyncTime()
 
@@ -191,7 +260,8 @@ export class SyncEngine {
         uploaded: 0,
         downloaded,
         conflicts: 0,
-        errors
+        errors,
+        pluginsDownloaded
       }
 
       console.log('[Sync] 强制同步完成:', result)
@@ -703,5 +773,317 @@ export class SyncEngine {
       // 保存元数据
       metaDb.putSync(docId, JSON.stringify(meta))
     })
+  }
+
+  // ==================== 插件文件同步 ====================
+
+  /**
+   * 同步插件文件
+   */
+  private async syncPlugins(
+    config: SyncConfig
+  ): Promise<{
+    pluginsUploaded: number
+    pluginsDownloaded: number
+    pluginsDeleted: number
+    errors: number
+  }> {
+    console.log('[Sync] 开始插件文件同步...')
+
+    let pluginsUploaded = 0
+    let pluginsDownloaded = 0
+    let pluginsDeleted = 0
+    let errors = 0
+
+    try {
+      // 1. 暂停 watcher 避免同步操作触发循环
+      pluginSyncWatcher.pause()
+
+      // 2. 处理脏数据：计算 hash、压缩 zip
+      const dirtyPlugins = pluginSyncWatcher.getDirtyPlugins()
+      const hashRecords = loadHashRecords()
+
+      for (const pluginName of dirtyPlugins) {
+        try {
+          const pluginDir = path.join(PLUGIN_DIR, pluginName)
+
+          if (!fs.existsSync(pluginDir)) {
+            // 本地插件已不存在，从记录中移除
+            delete hashRecords[pluginName]
+            const zipPath = getZipPath(pluginName)
+            if (fs.existsSync(zipPath)) {
+              fs.unlinkSync(zipPath)
+            }
+            pluginSyncWatcher.clearDirty(pluginName)
+            continue
+          }
+
+          // 计算新 hash
+          const newHash = computePluginHash(pluginDir)
+
+          // 读取 plugin.json 获取版本号
+          const pluginJsonPath = path.join(pluginDir, 'plugin.json')
+          let version = '0.0.0'
+          if (fs.existsSync(pluginJsonPath)) {
+            try {
+              const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8'))
+              version = pluginJson.version || '0.0.0'
+            } catch {
+              // 解析失败使用默认版本号
+            }
+          }
+
+          const existingRecord = hashRecords[pluginName]
+
+          // hash 未变化且 zip 存在，跳过
+          const zipPath = getZipPath(pluginName)
+          if (existingRecord?.hash === newHash && fs.existsSync(zipPath)) {
+            pluginSyncWatcher.clearDirty(pluginName)
+            continue
+          }
+
+          // hash 变化或 zip 缺失，重新压缩
+          console.log(`[Sync] 压缩插件: ${pluginName}`)
+          const zip = new AdmZip()
+          zip.addLocalFolder(pluginDir)
+          zip.writeZip(zipPath)
+
+          // 更新记录
+          hashRecords[pluginName] = {
+            hash: newHash,
+            version,
+            lastSyncTime: Date.now()
+          }
+
+          pluginSyncWatcher.clearDirty(pluginName)
+        } catch (error) {
+          console.error(`[Sync] 处理脏插件失败: ${pluginName}`, error)
+          errors++
+        }
+      }
+
+      // 3. 读取远端 manifest
+      const remoteManifest = await this.webdavClient.downloadPluginManifest()
+      const deviceId = config.deviceId
+
+      // 4. 上传阶段：本地有而远端无或 hash 不同的插件
+      for (const [pluginName, record] of Object.entries(hashRecords)) {
+        try {
+          const remoteEntry = remoteManifest[pluginName]
+
+          // 远端无此插件，或 hash 不同
+          if (!remoteEntry || remoteEntry.hash !== record.hash) {
+            const zipPath = getZipPath(pluginName)
+            if (!fs.existsSync(zipPath)) {
+              console.warn(`[Sync] 插件 zip 不存在，跳过上传: ${pluginName}`)
+              continue
+            }
+
+            console.log(`[Sync] 上传插件: ${pluginName}`)
+            const zipBuffer = fs.readFileSync(zipPath)
+            await this.webdavClient.uploadPluginZip(pluginName, zipBuffer)
+
+            // 更新 manifest
+            remoteManifest[pluginName] = {
+              hash: record.hash,
+              version: record.version,
+              lastModified: Date.now(),
+              deviceId
+            }
+
+            pluginsUploaded++
+          }
+        } catch (error) {
+          console.error(`[Sync] 上传插件失败: ${pluginName}`, error)
+          errors++
+        }
+      }
+
+      // 5. 本地删除 → 远端删除：本设备上传过但本地已不存在的
+      for (const [pluginName, entry] of Object.entries(remoteManifest)) {
+        if (entry.deviceId === deviceId && !hashRecords[pluginName]) {
+          try {
+            console.log(`[Sync] 删除远端插件: ${pluginName}`)
+            await this.webdavClient.deletePluginZip(pluginName)
+            delete remoteManifest[pluginName]
+            pluginsDeleted++
+          } catch (error) {
+            console.error(`[Sync] 删除远端插件失败: ${pluginName}`, error)
+            errors++
+          }
+        }
+      }
+
+      // 6. 下载阶段：远端有而本地无或 hash 不同的（非本设备上传的）
+      for (const [pluginName, entry] of Object.entries(remoteManifest)) {
+        try {
+          const localRecord = hashRecords[pluginName]
+
+          // 跳过本设备刚上传的
+          if (entry.deviceId === deviceId) continue
+
+          // 本地无此插件或 hash 不同
+          if (!localRecord || localRecord.hash !== entry.hash) {
+            console.log(`[Sync] 下载插件: ${pluginName}`)
+            const zipBuffer = await this.webdavClient.downloadPluginZip(pluginName)
+            if (!zipBuffer) {
+              console.warn(`[Sync] 远端插件 zip 不存在: ${pluginName}`)
+              continue
+            }
+
+            await this.installPluginFromSyncZip(pluginName, zipBuffer)
+
+            // 更新本地 hash 记录
+            hashRecords[pluginName] = {
+              hash: entry.hash,
+              version: entry.version,
+              lastSyncTime: Date.now()
+            }
+
+            pluginsDownloaded++
+          }
+        } catch (error) {
+          console.error(`[Sync] 下载插件失败: ${pluginName}`, error)
+          errors++
+        }
+      }
+
+      // 7. 远端删除 → 本地删除：本地存在但远端 manifest 已无的
+      for (const pluginName of Object.keys(hashRecords)) {
+        if (!remoteManifest[pluginName]) {
+          const pluginDir = path.join(PLUGIN_DIR, pluginName)
+          if (fs.existsSync(pluginDir)) {
+            try {
+              console.log(`[Sync] 本地卸载插件（远端已删除）: ${pluginName}`)
+              await this.uninstallSyncedPlugin(pluginName)
+              delete hashRecords[pluginName]
+              pluginsDeleted++
+            } catch (error) {
+              console.error(`[Sync] 本地卸载插件失败: ${pluginName}`, error)
+              errors++
+            }
+          }
+        }
+      }
+
+      // 8. 保存更新后的 manifest 和 hash 记录
+      await this.webdavClient.uploadPluginManifest(remoteManifest)
+      saveHashRecords(hashRecords)
+    } catch (error) {
+      console.error('[Sync] 插件同步失败:', error)
+      errors++
+    } finally {
+      // 9. 恢复 watcher
+      pluginSyncWatcher.resume()
+    }
+
+    console.log(
+      `[Sync] 插件同步完成: 上传 ${pluginsUploaded}, 下载 ${pluginsDownloaded}, 删除 ${pluginsDeleted}, 错误 ${errors}`
+    )
+
+    return { pluginsUploaded, pluginsDownloaded, pluginsDeleted, errors }
+  }
+
+  /**
+   * 从同步下载的 zip 安装插件
+   */
+  private async installPluginFromSyncZip(pluginName: string, zipBuffer: Buffer): Promise<void> {
+    const targetDir = path.join(PLUGIN_DIR, pluginName)
+
+    // 确保插件目录存在
+    if (!fs.existsSync(PLUGIN_DIR)) {
+      fs.mkdirSync(PLUGIN_DIR, { recursive: true })
+    }
+
+    // 如果已存在则先删除
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true, force: true })
+    }
+
+    // 解压 zip
+    const zip = new AdmZip(zipBuffer)
+    zip.extractAllTo(targetDir, true)
+
+    // 读取 plugin.json
+    const pluginJsonPath = path.join(targetDir, 'plugin.json')
+    if (!fs.existsSync(pluginJsonPath)) {
+      console.warn(`[Sync] 安装的插件缺少 plugin.json: ${pluginName}`)
+      return
+    }
+
+    const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8'))
+
+    // 更新 LMDB 插件列表
+    const pluginsDoc = await this.db.promises.get('ZTOOLS/plugins')
+    const plugins: any[] = pluginsDoc?.data ? JSON.parse(JSON.stringify(pluginsDoc.data)) : []
+
+    // 检查是否已存在
+    const existingIndex = plugins.findIndex((p: any) => p.name === pluginName)
+    const pluginEntry = {
+      name: pluginJson.name || pluginName,
+      title: pluginJson.title || pluginJson.name || pluginName,
+      path: targetDir,
+      version: pluginJson.version || '0.0.0',
+      description: pluginJson.description || '',
+      logo: pluginJson.logo || '',
+      features: pluginJson.features || [],
+      isDevelopment: false
+    }
+
+    if (existingIndex >= 0) {
+      plugins[existingIndex] = pluginEntry
+    } else {
+      plugins.push(pluginEntry)
+    }
+
+    await this.db.promises.put({
+      _id: 'ZTOOLS/plugins',
+      _rev: pluginsDoc?._rev,
+      data: plugins
+    })
+
+    // 通知渲染进程
+    this.notifyPluginsChanged()
+  }
+
+  /**
+   * 卸载通过同步安装的插件
+   */
+  private async uninstallSyncedPlugin(pluginName: string): Promise<void> {
+    const pluginDir = path.join(PLUGIN_DIR, pluginName)
+
+    // 删除目录
+    if (fs.existsSync(pluginDir)) {
+      fs.rmSync(pluginDir, { recursive: true, force: true })
+    }
+
+    // 从 LMDB 插件列表移除
+    const pluginsDoc = await this.db.promises.get('ZTOOLS/plugins')
+    if (pluginsDoc?.data) {
+      const plugins = pluginsDoc.data.filter((p: any) => p.name !== pluginName)
+      await this.db.promises.put({
+        _id: 'ZTOOLS/plugins',
+        _rev: pluginsDoc._rev,
+        data: plugins
+      })
+    }
+
+    // 删除本地 zip
+    const zipPath = getZipPath(pluginName)
+    if (fs.existsSync(zipPath)) {
+      fs.unlinkSync(zipPath)
+    }
+
+    // 通知渲染进程
+    this.notifyPluginsChanged()
+  }
+
+  /**
+   * 通知渲染进程插件列表已变更
+   */
+  private notifyPluginsChanged(): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('plugins-changed')
+    }
   }
 }

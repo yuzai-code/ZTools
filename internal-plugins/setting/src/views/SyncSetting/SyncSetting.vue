@@ -14,6 +14,7 @@ const syncIntervalOptions = [
 
 // 同步配置
 const syncEnabled = ref(false)
+const syncPluginsEnabled = ref(false)
 const config = ref({
   serverUrl: '',
   username: '',
@@ -52,6 +53,7 @@ async function loadConfig(): Promise<void> {
     const result = await window.ztools.internal.syncGetConfig()
     if (result.success && result.config) {
       syncEnabled.value = result.config.enabled
+      syncPluginsEnabled.value = result.config.syncPlugins || false
       config.value = {
         serverUrl: result.config.serverUrl || '',
         username: result.config.username || '',
@@ -96,7 +98,8 @@ async function handleSyncToggle(): Promise<void> {
       serverUrl: config.value.serverUrl,
       username: config.value.username,
       password: config.value.password,
-      syncInterval: config.value.syncInterval
+      syncInterval: config.value.syncInterval,
+      syncPlugins: syncPluginsEnabled.value
     })
 
     if (!result.success) {
@@ -109,6 +112,29 @@ async function handleSyncToggle(): Promise<void> {
     error(`操作失败：${err.message}`)
     // 回滚开关状态
     syncEnabled.value = !syncEnabled.value
+  }
+}
+
+// 同步插件开关切换
+async function handleSyncPluginsToggle(): Promise<void> {
+  try {
+    const result = await window.ztools.internal.syncSaveConfig({
+      enabled: syncEnabled.value,
+      serverUrl: config.value.serverUrl,
+      username: config.value.username,
+      password: config.value.password,
+      syncInterval: config.value.syncInterval,
+      syncPlugins: syncPluginsEnabled.value
+    })
+
+    if (!result.success) {
+      error(`保存状态失败：${result.error}`)
+      syncPluginsEnabled.value = !syncPluginsEnabled.value
+    }
+  } catch (err: any) {
+    console.error('切换插件同步状态失败:', err)
+    error(`操作失败：${err.message}`)
+    syncPluginsEnabled.value = !syncPluginsEnabled.value
   }
 }
 
@@ -153,7 +179,8 @@ async function saveConfig(): Promise<void> {
       serverUrl: config.value.serverUrl,
       username: config.value.username,
       password: config.value.password,
-      syncInterval: config.value.syncInterval
+      syncInterval: config.value.syncInterval,
+      syncPlugins: syncPluginsEnabled.value
     })
 
     if (result.success) {
@@ -182,10 +209,16 @@ async function syncNow(): Promise<void> {
       lastSyncResult.value = result.result
       config.value.lastSyncTime = Date.now()
       loadUnsyncedCount()
-      success(
-        `同步完成！上传 ${result.result.uploaded} 项，下载 ${result.result.downloaded} 项，错误 ${result.result.errors} 项`,
-        4000
-      )
+
+      let msg = `同步完成！上传 ${result.result.uploaded} 项，下载 ${result.result.downloaded} 项，错误 ${result.result.errors} 项`
+      if (
+        result.result.pluginsUploaded ||
+        result.result.pluginsDownloaded ||
+        result.result.pluginsDeleted
+      ) {
+        msg += `\n插件：上传 ${result.result.pluginsUploaded || 0}，下载 ${result.result.pluginsDownloaded || 0}，删除 ${result.result.pluginsDeleted || 0}`
+      }
+      success(msg, 4000)
     } else {
       error(`同步失败：${result.error}`)
     }
@@ -283,6 +316,18 @@ onMounted(() => {
         <Dropdown v-model="config.syncInterval" :options="syncIntervalOptions" />
       </div>
 
+      <!-- 同步插件开关 -->
+      <div class="setting-item sync-plugins-toggle">
+        <div class="setting-label">
+          <span>同步插件</span>
+          <span class="setting-desc">开启后将自动同步已安装的插件到其他设备（不包括开发插件）</span>
+        </div>
+        <label class="toggle">
+          <input v-model="syncPluginsEnabled" type="checkbox" @change="handleSyncPluginsToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <!-- 操作按钮 -->
       <div class="action-buttons">
         <button class="btn btn-primary" :disabled="testing" @click="testConnection">
@@ -313,6 +358,18 @@ onMounted(() => {
           <span class="status-label">上次同步:</span>
           <span class="status-value">
             上传 {{ lastSyncResult.uploaded }} / 下载 {{ lastSyncResult.downloaded }}
+            <span
+              v-if="
+                lastSyncResult.pluginsUploaded ||
+                lastSyncResult.pluginsDownloaded ||
+                lastSyncResult.pluginsDeleted
+              "
+            >
+              / 插件 ↑{{ lastSyncResult.pluginsUploaded || 0 }} ↓{{
+                lastSyncResult.pluginsDownloaded || 0
+              }}
+              ✕{{ lastSyncResult.pluginsDeleted || 0 }}
+            </span>
             <span v-if="lastSyncResult.errors > 0" class="error-text">
               / 错误 {{ lastSyncResult.errors }}
             </span>
@@ -327,6 +384,7 @@ onMounted(() => {
           <li>推荐使用坚果云等支持 WebDAV 的云存储服务</li>
           <li>服务器地址必须使用 HTTPS 协议</li>
           <li>同步数据包括：固定列表、通用设置、插件配置</li>
+          <li>开启「同步插件」后，已安装的非开发插件会自动同步到其他设备</li>
           <li>应用使用历史不会同步（每个设备独立）</li>
           <li>
             <strong>强制从云端同步</strong
@@ -392,6 +450,12 @@ onMounted(() => {
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+}
+
+.sync-config .setting-item.sync-plugins-toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .sync-config .setting-label {

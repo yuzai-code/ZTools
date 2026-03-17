@@ -13,6 +13,7 @@ export interface SyncConfig {
   syncInterval: number // 同步间隔（秒）
   lastSyncTime: number // 最后同步时间
   deviceId: string // 当前设备唯一 ID（自动生成）
+  syncPlugins?: boolean // 是否同步插件文件
 }
 
 /**
@@ -43,6 +44,42 @@ export interface SyncResult {
   downloaded: number // 下载数量
   conflicts: number // 冲突数量
   errors: number // 错误数量
+  pluginsUploaded?: number // 上传插件数量
+  pluginsDownloaded?: number // 下载插件数量
+  pluginsDeleted?: number // 删除插件数量
+}
+
+/**
+ * 插件哈希记录
+ */
+export interface PluginHashRecord {
+  hash: string
+  version: string
+  lastSyncTime: number
+}
+
+/**
+ * 插件哈希映射
+ */
+export interface PluginHashMap {
+  [pluginName: string]: PluginHashRecord
+}
+
+/**
+ * 远端插件清单条目
+ */
+export interface RemotePluginManifestEntry {
+  hash: string
+  version: string
+  lastModified: number
+  deviceId: string
+}
+
+/**
+ * 远端插件清单
+ */
+export interface RemotePluginManifest {
+  [pluginName: string]: RemotePluginManifestEntry
 }
 
 /**

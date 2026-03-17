@@ -71,7 +71,7 @@ class APIManager {
     settingsAPI.init(mainWindow, pluginManager)
     systemAPI.init(mainWindow)
     systemSettingsAPI.init()
-    syncAPI.init()
+    syncAPI.init(mainWindow)
     localShortcutsAPI.init(mainWindow)
     webSearchAPI.init()
 
