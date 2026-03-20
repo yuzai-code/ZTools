@@ -370,6 +370,14 @@ declare global {
           title?: string
           appPath?: string
         } | null>
+
+        // 超级面板翻译
+        updateSuperPanelTranslate: (enabled: boolean) => Promise<{ success: boolean }>
+        getTranslationStatus: () => Promise<{
+          status: 'idle' | 'downloading' | 'initializing' | 'ready' | 'error'
+          error?: string
+        }>
+
         pinToSuperPanel: (command: any) => Promise<{ success: boolean; error?: string }>
         unpinSuperPanelCommand: (
           path: string,

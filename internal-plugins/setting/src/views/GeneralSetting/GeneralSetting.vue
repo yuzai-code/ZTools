@@ -144,6 +144,10 @@ const superPanelMouseButton = ref<MouseButtonType>('middle')
 const superPanelLongPressMs = ref(500)
 const superPanelBlockedApps = ref<Array<{ app: string; bundleId?: string; label?: string }>>([])
 
+// 超级面板翻译设置
+const superPanelTranslateEnabled = ref(false)
+const translationStatus = ref<'idle' | 'downloading' | 'initializing' | 'ready' | 'error'>('idle')
+
 // 超级面板触发模式（计算属性）
 const superPanelTriggerMode = computed({
   get: () => {
@@ -591,6 +595,40 @@ async function handleSuperPanelEnabledChange(): Promise<void> {
   }
 }
 
+// 处理超级面板翻译开关变化
+async function handleSuperPanelTranslateChange(): Promise<void> {
+  try {
+    await saveSettings()
+    await window.ztools.internal.updateSuperPanelTranslate(superPanelTranslateEnabled.value)
+    if (superPanelTranslateEnabled.value) {
+      translationStatus.value = 'downloading'
+      // 轮询翻译状态
+      pollTranslationStatus()
+    } else {
+      translationStatus.value = 'idle'
+    }
+    console.log('超级面板翻译开关已更新:', superPanelTranslateEnabled.value)
+  } catch (err) {
+    console.error('更新超级面板翻译开关失败:', err)
+  }
+}
+
+// 轮询翻译引擎状态
+function pollTranslationStatus(): void {
+  const poll = async (): Promise<void> => {
+    try {
+      const result = await window.ztools.internal.getTranslationStatus()
+      translationStatus.value = result.status
+      if (result.status === 'downloading' || result.status === 'initializing') {
+        setTimeout(poll, 1000)
+      }
+    } catch {
+      // ignore
+    }
+  }
+  poll()
+}
+
 // 处理超级面板触发模式变化
 async function handleSuperPanelTriggerModeChange(mode: string): Promise<void> {
   try {
@@ -996,6 +1034,10 @@ async function loadSettings(): Promise<void> {
       superPanelMouseButton.value = data.superPanelMouseButton ?? 'middle'
       superPanelLongPressMs.value = data.superPanelLongPressMs ?? 500
       superPanelBlockedApps.value = data.superPanelBlockedApps ?? []
+      superPanelTranslateEnabled.value = data.superPanelTranslateEnabled ?? false
+      if (superPanelTranslateEnabled.value) {
+        pollTranslationStatus()
+      }
       // 窗口材质由主进程启动时保证一定有值，无需兜底
       windowMaterial.value = data.windowMaterial
       acrylicLightOpacity.value = data.acrylicLightOpacity ?? 78
@@ -1067,6 +1109,7 @@ async function saveSettings(): Promise<void> {
       superPanelMouseButton: superPanelMouseButton.value,
       superPanelLongPressMs: superPanelLongPressMs.value,
       superPanelBlockedApps: superPanelBlockedApps.value.map((item) => ({ ...item })),
+      superPanelTranslateEnabled: superPanelTranslateEnabled.value,
       theme: theme.value,
       primaryColor: primaryColor.value,
       customColor: customColor.value,
@@ -1666,6 +1709,54 @@ onMounted(() => {
             @blur="handleSuperPanelLongPressMsChange"
             @keyup.enter="handleSuperPanelLongPressMsChange"
           />
+        </div>
+      </div>
+
+      <div v-if="superPanelEnabled" class="setting-item">
+        <div class="setting-label">
+          <span>选中翻译</span>
+          <span class="setting-desc">
+            选中文字触发超级面板时，自动翻译为中文显示（使用 Bergamot 离线翻译引擎，首次启用需下载约
+            55MB 模型）
+          </span>
+          <span
+            v-if="superPanelTranslateEnabled && translationStatus === 'downloading'"
+            class="setting-desc"
+            style="color: var(--primary-color)"
+          >
+            正在下载翻译模型...
+          </span>
+          <span
+            v-else-if="superPanelTranslateEnabled && translationStatus === 'initializing'"
+            class="setting-desc"
+            style="color: var(--primary-color)"
+          >
+            正在初始化翻译引擎...
+          </span>
+          <span
+            v-else-if="superPanelTranslateEnabled && translationStatus === 'ready'"
+            class="setting-desc"
+            style="color: var(--success-color)"
+          >
+            翻译引擎就绪
+          </span>
+          <span
+            v-else-if="superPanelTranslateEnabled && translationStatus === 'error'"
+            class="setting-desc"
+            style="color: var(--danger-color)"
+          >
+            翻译引擎初始化失败
+          </span>
+        </div>
+        <div class="setting-control">
+          <label class="toggle">
+            <input
+              v-model="superPanelTranslateEnabled"
+              type="checkbox"
+              @change="handleSuperPanelTranslateChange"
+            />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
 

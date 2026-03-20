@@ -151,6 +151,12 @@
         </div>
       </div>
 
+      <!-- 翻译结果 -->
+      <div v-if="translationText" class="translation-bar">
+        <span class="translation-label">译</span>
+        <span class="translation-text">{{ translationText }}</span>
+      </div>
+
       <!-- 搜索结果列表 -->
       <div class="search-list">
         <div
@@ -391,6 +397,8 @@ const selectedIndex = ref(0)
 const iconErrors = ref<Set<string>>(new Set())
 // 保存当前的剪贴板内容（由搜索结果携带）
 const currentClipboardContent = ref<ClipboardContent | null>(null)
+// 翻译结果
+const translationText = ref('')
 // 头像（默认使用内置头像）
 const avatar = ref(defaultAvatar)
 const acrylicLightOpacity = ref(78)
@@ -923,6 +931,7 @@ onMounted(() => {
       ensureFolderIds(pinnedCommands.value)
       selectedIndex.value = 0
       currentClipboardContent.value = null
+      translationText.value = ''
       scrollToTop()
     } else if (data.type === 'search') {
       mode.value = 'search'
@@ -930,6 +939,7 @@ onMounted(() => {
       selectedIndex.value = 0
       // 保存搜索结果携带的剪贴板内容
       currentClipboardContent.value = data.clipboardContent || null
+      translationText.value = ''
       scrollToTop()
     }
   })
@@ -1021,6 +1031,13 @@ onMounted(() => {
   window.ztools.onUpdateAvatar((newAvatar: string) => {
     console.log('[SuperPanel] 收到头像更新:', newAvatar)
     avatar.value = newAvatar || defaultAvatar
+  })
+
+  // 监听翻译结果
+  window.ztools.onSuperPanelTranslation((data: { text: string }) => {
+    if (data.text) {
+      translationText.value = data.text
+    }
   })
 
   // 监听右键菜单命令
@@ -1300,6 +1317,40 @@ onUnmounted(() => {
 :deep(.chosen .grid-icon-placeholder),
 :deep(.chosen .grid-name) {
   pointer-events: none;
+}
+
+/* ========== 翻译结果 ========== */
+.translation-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--divider-color);
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.translation-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-on-primary);
+  background: var(--primary-color);
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+  line-height: 14px;
+}
+
+.translation-text {
+  font-size: 12px;
+  color: var(--text-color);
+  line-height: 16px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  word-break: break-all;
 }
 
 /* ========== 列表模式 ========== */

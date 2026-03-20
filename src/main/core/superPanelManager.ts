@@ -9,6 +9,7 @@ import windowManager from '../managers/windowManager.js'
 import clipboardManager from '../managers/clipboardManager.js'
 import { readClipboardFiles } from '../utils/clipboardFiles.js'
 import { applyWindowMaterial, getDefaultWindowMaterial } from '../utils/windowUtils.js'
+import translationManager from './translationManager.js'
 
 // 超级面板窗口尺寸
 const SUPER_PANEL_WIDTH = 250
@@ -303,6 +304,11 @@ class SuperPanelManager {
       if (hasNewContent && newContent) {
         // 有新内容：发送搜索请求到主窗口（携带剪贴板类型和数据）
         this.requestSearch(newContent)
+
+        // 如果是文本内容，异步请求翻译
+        if (newContent.type === 'text' && newContent.text) {
+          this.requestTranslation(newContent.text)
+        }
       } else {
         // 无新内容：加载固定列表
         this.loadPinnedCommands()
@@ -496,6 +502,20 @@ class SuperPanelManager {
       text: searchText,
       clipboardContent: content
     })
+  }
+
+  /**
+   * 请求翻译选中的文本
+   */
+  private async requestTranslation(text: string): Promise<void> {
+    try {
+      const translation = await translationManager.translate(text)
+      if (translation) {
+        this.sendToSuperPanel('super-panel-translation', { text: translation })
+      }
+    } catch (error) {
+      console.error('[SuperPanel] 翻译请求失败:', error)
+    }
   }
 
   /**

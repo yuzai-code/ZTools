@@ -46,6 +46,7 @@ import pluginFFmpegAPI from './plugin/ffmpeg'
 import httpServer from '../core/httpServer'
 import mcpServer from '../core/mcpServer'
 import superPanelManager from '../core/superPanelManager'
+import translationManager from '../core/translationManager'
 
 /**
  * API管理器 - 统一初始化和管理所有API模块
@@ -121,6 +122,9 @@ class APIManager {
 
     // 初始化超级面板管理器
     superPanelManager.init(mainWindow)
+
+    // 初始化翻译管理器
+    translationManager.init()
 
     // 设置一些特殊的IPC处理器
     this.setupSpecialHandlers()

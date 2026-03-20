@@ -8,6 +8,7 @@ import floatingBallManager from '../../core/floatingBallManager.js'
 import httpServer from '../../core/httpServer.js'
 import mcpServer from '../../core/mcpServer.js'
 import superPanelManager from '../../core/superPanelManager.js'
+import translationManager from '../../core/translationManager.js'
 import aiModelsAPI from '../renderer/aiModels.js'
 import commandsAPI from '../renderer/commands.js'
 import pluginsAPI from '../renderer/plugins.js'
@@ -728,6 +729,22 @@ export class InternalPluginAPI {
         throw new PermissionDeniedError('internal:get-current-window-info')
       }
       return clipboardManager.getCurrentWindow()
+    })
+
+    // ==================== 超级面板翻译 API ====================
+    ipcMain.handle('internal:update-super-panel-translate', async (event, enabled: boolean) => {
+      if (!requireInternalPlugin(this.pluginManager, event)) {
+        throw new PermissionDeniedError('internal:update-super-panel-translate')
+      }
+      translationManager.updateEnabled(enabled)
+      return { success: true }
+    })
+
+    ipcMain.handle('internal:get-translation-status', async (event) => {
+      if (!requireInternalPlugin(this.pluginManager, event)) {
+        throw new PermissionDeniedError('internal:get-translation-status')
+      }
+      return translationManager.getStatus()
     })
 
     // ==================== 图片分析 API ====================

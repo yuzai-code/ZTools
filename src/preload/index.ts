@@ -380,6 +380,9 @@ const api = {
   onSuperPanelWindowCommandsData: (callback: (data: { results: any[] }) => void) => {
     ipcRenderer.on('super-panel-window-commands-data', (_event, data) => callback(data))
   },
+  onSuperPanelTranslation: (callback: (data: { text: string }) => void) => {
+    ipcRenderer.on('super-panel-translation', (_event, data) => callback(data))
+  },
   onSuperPanelSearchWindowCommands: (
     callback: (windowInfo: { app?: string; title?: string }) => void
   ) => {

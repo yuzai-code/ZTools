@@ -866,6 +866,13 @@ window.ztools = {
       await electron.ipcRenderer.invoke('internal:update-super-panel-blocked-apps', blockedApps),
     getCurrentWindowInfo: async () =>
       await electron.ipcRenderer.invoke('internal:get-current-window-info'),
+
+    // 超级面板翻译
+    updateSuperPanelTranslate: async (enabled) =>
+      await electron.ipcRenderer.invoke('internal:update-super-panel-translate', enabled),
+    getTranslationStatus: async () =>
+      await electron.ipcRenderer.invoke('internal:get-translation-status'),
+
     pinToSuperPanel: async (command) =>
       await electron.ipcRenderer.invoke('super-panel:pin-command', command),
     unpinSuperPanelCommand: async (path, featureCode) =>
