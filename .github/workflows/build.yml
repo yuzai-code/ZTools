@@ -17,8 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS x64 (Intel)
-          - os: macos-13
+          # macOS x64 (Intel, available until Aug 2027)
+          - os: macos-15-intel
             arch: x64
             build_cmd: pnpm run build:mac:x64
           # macOS ARM64 (Apple Silicon)
@@ -99,7 +99,7 @@ jobs:
       - name: Download macOS x64 artifact
         uses: actions/download-artifact@v4
         with:
-          name: artifact-macos-13-x64
+          name: artifact-macos-15-intel-x64
           path: dist
 
       - name: Download macOS ARM64 artifact
