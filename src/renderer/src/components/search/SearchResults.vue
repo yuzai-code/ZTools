@@ -577,6 +577,17 @@ async function handleAppContextMenu(
     })
   }
 
+  // 添加更多菜单
+  menuItems.push({
+    label: '更多',
+    submenu: [
+      {
+        id: `add-global-shortcut:${JSON.stringify({ name: app.name, pluginTitle: app.pluginTitle || app.pluginName })}`,
+        label: '设置全局快捷键'
+      }
+    ]
+  })
+
   await window.ztools.showContextMenu(menuItems)
 }
 
@@ -923,6 +934,39 @@ async function handleContextMenuCommand(command: string): Promise<void> {
       await loadSuperPanelPinnedData()
     } catch (error) {
       console.error('从超级面板取消固定失败:', error)
+    }
+  } else if (command.startsWith('add-global-shortcut:')) {
+    const jsonStr = command.replace('add-global-shortcut:', '')
+    try {
+      const { name, pluginTitle } = JSON.parse(jsonStr)
+      // 构建目标指令字符串（使用插件标题/指令名称格式）
+      const targetCommand = pluginTitle ? `${pluginTitle}/${name}` : name
+
+      // 找到设置插件的快捷键指令
+      const settingCmd = commandDataStore.commands.find(
+        (c) =>
+          c.type === 'plugin' &&
+          c.pluginName === 'setting' &&
+          c.featureCode === 'ui.router?router=Shortcuts'
+      )
+      console.log('targetCommand', targetCommand)
+      if (settingCmd) {
+        await window.ztools.launch({
+          path: settingCmd.path,
+          type: 'plugin',
+          featureCode: 'ui.router?router=Shortcuts',
+          name: '快捷键',
+          cmdType: 'text',
+          param: {
+            payload: targetCommand,
+            type: 'text'
+          }
+        })
+      } else {
+        console.error('未找到设置插件的快捷键指令')
+      }
+    } catch (error) {
+      console.error('添加全局快捷键失败:', error)
     }
   }
 }

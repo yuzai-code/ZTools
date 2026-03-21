@@ -114,6 +114,29 @@ const hotkeyPresets = computed(() => {
   ]
 })
 
+// 快捷键快捷设置下拉菜单选项（包含预设和重置）
+const hotkeyQuickActionsOptions = computed(() => {
+  const options = [...hotkeyPresets.value]
+  // 添加重置选项
+  options.push({ label: '重置', value: '__reset__' })
+  return options
+})
+
+// 快捷键快捷设置选择的值（用于下拉菜单）
+const hotkeyQuickAction = ref('')
+
+// 处理快捷键快捷设置选择
+async function handleHotkeyQuickActionChange(value: string | number): Promise<void> {
+  const actionValue = String(value)
+  if (actionValue === '__reset__') {
+    await resetHotkey()
+  } else {
+    await applyHotkeyPreset(actionValue)
+  }
+  // 清空选择，避免下拉菜单一直显示选中状态
+  hotkeyQuickAction.value = ''
+}
+
 // 本地状态（替代 windowStore）
 const theme = ref<ThemeType>('system')
 const primaryColor = ref<PrimaryColor>('blue')
@@ -1142,48 +1165,20 @@ onMounted(() => {
     <div class="setting-group">
       <h3 class="setting-group-title">基础</h3>
 
-      <div class="setting-item hotkey-setting-item">
+      <div class="setting-item">
         <div class="setting-label">
           <span>呼出快捷键</span>
           <span class="setting-desc">设置全局快捷键来呼出应用</span>
         </div>
-        <div class="setting-control-column">
-          <div class="setting-control">
-            <HotkeyInput v-model="hotkey" :platform="platform" @change="handleHotkeyChange" />
-            <button
-              v-if="hotkey !== defaultHotkey"
-              class="btn btn-icon"
-              title="重置"
-              @click="resetHotkey"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="1 0 18 18"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M14.5 9C14.5 11.4853 12.4853 13.5 10 13.5C7.51472 13.5 5.5 11.4853 5.5 9C5.5 6.51472 7.51472 4.5 10 4.5C11.6569 4.5 13.0943 5.41421 13.8536 6.75M14 4V7H11"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
-          <div class="hotkey-presets">
-            <button
-              v-for="preset in hotkeyPresets"
-              :key="preset.value"
-              class="hotkey-preset-btn"
-              :class="{ active: hotkey === preset.value }"
-              @click="applyHotkeyPreset(preset.value)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
+        <div class="setting-control">
+          <HotkeyInput v-model="hotkey" :platform="platform" @change="handleHotkeyChange" />
+          <Dropdown
+            v-model="hotkeyQuickAction"
+            :options="hotkeyQuickActionsOptions"
+            placeholder="快捷设置"
+            style="min-width: 160px"
+            @change="handleHotkeyQuickActionChange"
+          />
         </div>
       </div>
 
@@ -2115,8 +2110,7 @@ onMounted(() => {
 
 /* 自定义按钮 */
 
-/* 快捷键设置项 */
-.hotkey-setting-item,
+/* Tab 目标设置项 */
 .tab-target-setting-item {
   align-items: flex-start;
 }
