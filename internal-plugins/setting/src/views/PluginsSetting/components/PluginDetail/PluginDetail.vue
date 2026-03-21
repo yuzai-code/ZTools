@@ -36,6 +36,7 @@ const props = defineProps<{
   plugin: PluginItem
   isLoading?: boolean
   isRunning?: boolean
+  isPinned?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +49,7 @@ const emit = defineEmits<{
   (e: 'open-folder'): void
   (e: 'package'): void
   (e: 'reload'): void
+  (e: 'toggle-pin'): void
 }>()
 
 const { success, error, confirm } = useToast()
@@ -632,6 +634,28 @@ watch(
         <button class="icon-btn topbar-action-btn delete-btn" title="卸载" @click="handleUninstall">
           <div class="i-z-trash font-size-16px" />
         </button>
+        <button
+          class="icon-btn topbar-action-btn pin-btn"
+          :class="{ 'is-pinned': isPinned }"
+          :title="isPinned ? '取消置顶' : '置顶'"
+          @click="emit('toggle-pin')"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="4" y1="4" x2="20" y2="4"></line>
+            <polyline points="8 10 12 4 16 10"></polyline>
+            <line x1="12" y1="10" x2="12" y2="20"></line>
+          </svg>
+        </button>
         <div class="topbar-settings-wrapper">
           <button
             class="icon-btn topbar-action-btn"
@@ -665,7 +689,7 @@ watch(
               </div>
               <div class="settings-dropdown-item">
                 <div class="settings-item-info">
-                  <span class="settings-item-label">跟随启动</span>
+                  <span class="settings-item-label">跟随启动2</span>
                   <span class="settings-item-desc">跟随主程序同时启动运行</span>
                 </div>
                 <label class="toggle">
@@ -1091,6 +1115,23 @@ watch(
 
 .topbar-action-btn.delete-btn:hover:not(:disabled) {
   background: var(--danger-light-bg);
+}
+
+.topbar-action-btn.pin-btn {
+  color: var(--text-secondary);
+}
+
+.topbar-action-btn.pin-btn:hover {
+  background: var(--hover-bg);
+  color: var(--primary-color);
+}
+
+.topbar-action-btn.pin-btn.is-pinned {
+  color: var(--primary-color);
+}
+
+.topbar-action-btn.pin-btn.is-pinned:hover {
+  background: var(--primary-light-bg);
 }
 
 /* 设置按钮容器 */

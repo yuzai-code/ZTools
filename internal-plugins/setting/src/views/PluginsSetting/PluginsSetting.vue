@@ -1002,6 +1002,7 @@ async function handleInstallFromNpm(data: {
         v-if="isDetailVisible && selectedPlugin && !showNpmPanel"
         :plugin="selectedPlugin"
         :is-running="isPluginRunning(selectedPlugin.path)"
+        :is-pinned="isPluginPinned(selectedPlugin.path)"
         @back="closePluginDetail"
         @open="handleOpenPlugin(selectedPlugin)"
         @uninstall="handleUninstallFromDetail(selectedPlugin)"
@@ -1009,6 +1010,7 @@ async function handleInstallFromNpm(data: {
         @open-folder="handleOpenFolder(selectedPlugin)"
         @package="handlePackagePlugin(selectedPlugin)"
         @reload="handleReloadPluginFromDetail(selectedPlugin)"
+        @toggle-pin="togglePin(selectedPlugin)"
       />
     </Transition>
 
