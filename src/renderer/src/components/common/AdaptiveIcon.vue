@@ -1,7 +1,7 @@
 <template>
   <img
     ref="imgRef"
-    :src="isVisible ? src : undefined"
+    :src="displaySrc"
     :class="['adaptive-icon', adaptiveClass]"
     :style="adaptiveStyle"
     v-bind="$attrs"
@@ -35,6 +35,10 @@ const isAnalyzing = ref(false)
 const isVisible = ref(false)
 const imgRef = ref<HTMLImageElement>()
 let observer: IntersectionObserver | null = null
+const TRANSPARENT_PIXEL =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E"
+
+const displaySrc = computed(() => (isVisible.value ? props.src : TRANSPARENT_PIXEL))
 
 // 分析图片
 async function analyzeImage(): Promise<void> {
