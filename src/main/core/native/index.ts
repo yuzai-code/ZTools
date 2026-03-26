@@ -41,7 +41,7 @@ interface NativeAddon {
   stopMouseMonitor: () => void
   getUwpApps: () => UwpAppInfo[]
   launchUwpApp: (appId: string) => boolean
-  getFileIcon: (filePath: string, size: number) => Buffer | null
+  getFileIcon: (filePath: string) => Promise<Buffer>
   resolveMuiStrings: (refs: string[]) => { [ref: string]: string }
   startColorPicker: (callback: (result: { success: boolean; hex: string | null }) => void) => void
   stopColorPicker: () => void
@@ -580,23 +580,26 @@ export class UwpManager {
  */
 export class IconExtractor {
   /**
-   * 获取文件/应用的图标（PNG 格式 Buffer）
-   * @param filePath - 文件路径（可以是 .exe、.lnk、.dll 或任何文件类型）
-   * @param size - 图标尺寸：16 | 32 | 64 | 256，默认 32
-   * @returns PNG 格式的图标数据，失败时返回 null
+   * 异步获取文件/应用的图标（PNG 格式 Buffer）
+   * @param {string} filePath - 文件路径（可以是 .exe、.lnk、.dll 或任何文件类型）
+   * @returns {Promise<Buffer>} Promise，resolve 为 PNG 格式的图标数据
+   * @example
+   * // 获取 exe 的图标
+   * const icon = await IconExtractor.getFileIcon('C:\\Windows\\notepad.exe');
+   *
+   * // 保存为文件
+   * const fs = require('fs');
+   * const icon = await IconExtractor.getFileIcon('C:\\Windows\\notepad.exe');
+   * if (icon) fs.writeFileSync('icon.png', icon);
    */
-  static getFileIcon(filePath: string, size: 16 | 32 | 64 | 256 = 32): Buffer | null {
+  static getFileIcon(filePath: string): Promise<Buffer> {
     if (platform !== 'win32') {
       throw new Error('getFileIcon is only supported on Windows')
     }
     if (typeof filePath !== 'string' || !filePath) {
       throw new TypeError('filePath must be a non-empty string')
     }
-    const validSizes = [16, 32, 64, 256]
-    if (!validSizes.includes(size)) {
-      throw new TypeError(`size must be one of: ${validSizes.join(', ')}`)
-    }
-    return (addon as NativeAddon).getFileIcon(filePath, size)
+    return (addon as NativeAddon).getFileIcon(filePath)
   }
 }
 

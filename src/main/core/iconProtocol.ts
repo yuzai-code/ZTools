@@ -28,9 +28,9 @@ function setIconCache(key: string, buffer: Buffer): void {
 }
 
 /**
- * 根据平台提取图标并返回 PNG Buffer（同步）
+ * 根据平台提取图标并返回 PNG Buffer（异步）
  */
-function extractIcon(iconPath: string): Buffer {
+async function extractIcon(iconPath: string): Promise<Buffer> {
   if (process.platform === 'darwin') {
     const tempDir = path.join(app.getPath('temp'), 'ztools-icons')
     fs.mkdirSync(tempDir, { recursive: true })
@@ -52,7 +52,7 @@ function extractIcon(iconPath: string): Buffer {
       throw new Error('Icon conversion failed')
     }
   } else {
-    const iconBuffer = IconExtractor.getFileIcon(iconPath, 32)
+    const iconBuffer = await IconExtractor.getFileIcon(iconPath)
     if (!iconBuffer) {
       throw new Error('Failed to extract icon')
     }
@@ -95,10 +95,10 @@ export function registerIconScheme(): void {
 }
 
 /**
- * 获取文件图标的 base64 Data URL（同步）
+ * 获取文件图标的 base64 Data URL（异步）
  * 支持文件路径或文件扩展名（如 ".txt"）
  */
-export function getFileIconAsBase64(filePath: string): string {
+export async function getFileIconAsBase64(filePath: string): Promise<string> {
   // 命中内存缓存（刷新 LRU 顺序）
   const cached = iconMemoryCache.get(filePath)
   if (cached) {
@@ -106,7 +106,7 @@ export function getFileIconAsBase64(filePath: string): string {
     return `data:image/png;base64,${cached.toString('base64')}`
   }
 
-  const buffer = extractIcon(filePath)
+  const buffer = await extractIcon(filePath)
 
   // 写入内存缓存
   setIconCache(filePath, buffer)
@@ -123,7 +123,7 @@ export function registerIconProtocolForSession(targetSession: Electron.Session):
     return
   }
 
-  targetSession.protocol.handle('ztools-icon', (request) => {
+  targetSession.protocol.handle('ztools-icon', async (request) => {
     try {
       const urlPath = request.url.replace('ztools-icon://', '')
       const iconPath = decodeURIComponent(urlPath)
@@ -136,7 +136,7 @@ export function registerIconProtocolForSession(targetSession: Electron.Session):
       }
 
       // 未命中：提取图标
-      const buffer = extractIcon(iconPath)
+      const buffer = await extractIcon(iconPath)
 
       // 写入内存缓存
       setIconCache(iconPath, buffer)
