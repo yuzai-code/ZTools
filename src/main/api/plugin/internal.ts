@@ -87,8 +87,8 @@ export function requireInternalPlugin(
     return true
   }
 
-  // 检查是否为内置插件
-  return pluginInfo.isInternal
+  // 检查是否拥有内部 API 权限
+  return pluginInfo.canUseInternalApi
 }
 
 /**

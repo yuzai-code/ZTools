@@ -3,7 +3,7 @@ import fsSync from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import api from '../api/index'
-import { INTERNAL_PLUGIN_NAMES, getInternalPluginPath } from './internalPlugins'
+import { BUNDLED_INTERNAL_PLUGIN_NAMES, getInternalPluginPath } from './internalPlugins'
 import { getInternalPluginUrl, getInternalPluginServerPort } from './internalPluginServer'
 
 /**
@@ -18,11 +18,11 @@ export function loadInternalPlugins(): void {
 
   // 移除旧的内置插件记录（基于名称判断）
   const filteredPlugins = existingPlugins.filter(
-    (p: any) => !INTERNAL_PLUGIN_NAMES.includes(p.name)
+    (p: any) => !BUNDLED_INTERNAL_PLUGIN_NAMES.includes(p.name)
   )
 
   // 重新加载所有内置插件
-  for (const pluginName of INTERNAL_PLUGIN_NAMES) {
+  for (const pluginName of BUNDLED_INTERNAL_PLUGIN_NAMES) {
     try {
       const pluginPath = getInternalPluginPath(pluginName)
 

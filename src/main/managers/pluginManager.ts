@@ -9,7 +9,7 @@ import api from '../api'
 import { WINDOW_INITIAL_HEIGHT, WINDOW_DEFAULT_HEIGHT, WINDOW_WIDTH } from '../common/constants'
 import detachedWindowManager, { DETACHED_TITLEBAR_HEIGHT } from '../core/detachedWindowManager'
 import { GLOBAL_SCROLLBAR_CSS } from '../core/globalStyles'
-import { isInternalPlugin } from '../core/internalPlugins'
+import { canPluginUseInternalApi, isBundledInternalPlugin } from '../core/internalPlugins'
 import { getInternalPluginUrl, getInternalPluginServerPort } from '../core/internalPluginServer'
 import pluginWindowManager from '../core/pluginWindowManager'
 import { registerIconProtocolForSession } from '../core/iconProtocol'
@@ -168,7 +168,7 @@ export class PluginManager {
       return { pluginUrl: pluginConfig.main, isConfigHeadless }
     }
     // 生产环境内置插件：使用本地 HTTP server 加载（避免 file:// 下的 CSP 限制）
-    if (isInternalPlugin(pluginConfig.name) && getInternalPluginServerPort() > 0) {
+    if (isBundledInternalPlugin(pluginConfig.name) && getInternalPluginServerPort() > 0) {
       const httpUrl = getInternalPluginUrl(pluginConfig.name, pluginConfig.main)
       console.log('[Plugin] 内置插件使用 HTTP server:', httpUrl)
       return { pluginUrl: httpUrl, isConfigHeadless }
@@ -186,7 +186,7 @@ export class PluginManager {
     const sess = session.fromPartition('persist:' + pluginName)
     sess.registerPreloadScript({ type: 'frame', filePath: mainPreload })
     await proxyManager.applyProxyToSession(sess, `插件 ${pluginName}`)
-    if (isInternalPlugin(pluginName)) {
+    if (isBundledInternalPlugin(pluginName)) {
       registerIconProtocolForSession(sess)
     }
     return sess
@@ -1826,7 +1826,8 @@ export class PluginManager {
   public getPluginInfoByWebContents(webContents: WebContents): {
     name: string
     path: string
-    isInternal: boolean
+    canUseInternalApi: boolean
+    isBundledInternal: boolean
     logo?: string
   } | null {
     // 1. 先检查主窗口中的插件视图
@@ -1835,7 +1836,8 @@ export class PluginManager {
         return {
           name: pluginViewInfo.name,
           path: pluginViewInfo.path,
-          isInternal: isInternalPlugin(pluginViewInfo.name),
+          canUseInternalApi: canPluginUseInternalApi(pluginViewInfo.name),
+          isBundledInternal: isBundledInternalPlugin(pluginViewInfo.name),
           logo: pluginViewInfo.logo
         }
       }
@@ -1848,7 +1850,8 @@ export class PluginManager {
         return {
           name: windowInfo.pluginName,
           path: windowInfo.pluginPath,
-          isInternal: isInternalPlugin(windowInfo.pluginName)
+          canUseInternalApi: canPluginUseInternalApi(windowInfo.pluginName),
+          isBundledInternal: isBundledInternalPlugin(windowInfo.pluginName)
         }
       }
     }
@@ -1887,7 +1890,7 @@ export class PluginManager {
    */
   public isInternalPluginCaller(event: Electron.IpcMainInvokeEvent): boolean {
     const pluginInfo = this.getPluginInfoByWebContents(event.sender)
-    return pluginInfo?.isInternal ?? false
+    return pluginInfo?.canUseInternalApi ?? false
   }
 
   /**

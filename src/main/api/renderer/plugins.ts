@@ -5,7 +5,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import * as tar from 'tar'
 import { normalizeIconPath } from '../../common/iconUtils'
-import { isInternalPlugin } from '../../core/internalPlugins'
+import { isBundledInternalPlugin } from '../../core/internalPlugins'
 import lmdbInstance from '../../core/lmdb/lmdbInstance'
 import windowManager from '../../managers/windowManager'
 import { sleep, shuffleArray } from '../../utils/common.js'
@@ -223,7 +223,7 @@ export class PluginsAPI {
   public async getPlugins(): Promise<any[]> {
     const allPlugins = await this.getAllPlugins()
     // 过滤掉所有内置插件（system、setting 等）
-    return allPlugins.filter((plugin: any) => !isInternalPlugin(plugin.name))
+    return allPlugins.filter((plugin: any) => !isBundledInternalPlugin(plugin.name))
   }
 
   // 获取所有插件列表（包括 system 插件，用于生成搜索指令）
@@ -840,7 +840,7 @@ export class PluginsAPI {
       const pluginInfo = plugins[pluginIndex]
 
       // ✅ 检查是否为内置插件
-      if (isInternalPlugin(pluginInfo.name)) {
+      if (isBundledInternalPlugin(pluginInfo.name)) {
         return {
           success: false,
           error: '内置插件不能卸载'
@@ -1405,7 +1405,7 @@ export class PluginsAPI {
       }
 
       const exportablePlugins = plugins.filter(
-        (p: any) => !p.isDevelopment && !isInternalPlugin(p.name)
+        (p: any) => !p.isDevelopment && !isBundledInternalPlugin(p.name)
       )
 
       if (exportablePlugins.length === 0) {
