@@ -452,10 +452,6 @@ class WindowManager {
     return ret
   }
 
-  public refreshPreviousActiveWindow(): void {
-    this.previousActiveWindow = clipboardManager.getCurrentWindow()
-  }
-
   public setPreviousActiveWindow(
     windowInfo: {
       app: string

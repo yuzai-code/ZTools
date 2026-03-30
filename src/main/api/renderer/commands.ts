@@ -274,6 +274,86 @@ export class AppsAPI {
   }
 
   /**
+   * 纯启动编排：负责管理插件载入前的主窗口占位、自动分离、复用已分离窗口等逻辑
+   */
+  private async preparePluginLaunch(
+    options: {
+      path: string
+      featureCode: string
+      name?: string
+    },
+    pluginConfig: any
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.pluginManager) {
+      return { success: false, error: 'Plugin Manager 未初始化' }
+    }
+
+    const { path: appPath, featureCode, name } = options
+
+    // 检查是否配置为自动分离
+    let shouldAutoDetach = false
+    if (pluginConfig) {
+      try {
+        const autoDetachPlugins = databaseAPI.dbGet('autoDetachPlugin')
+        if (
+          autoDetachPlugins &&
+          Array.isArray(autoDetachPlugins) &&
+          autoDetachPlugins.includes(pluginConfig.name)
+        ) {
+          shouldAutoDetach = true
+          console.log(`插件 ${pluginConfig.name} 配置为自动分离，直接在独立窗口中创建`)
+        }
+      } catch (error) {
+        console.error('[Commands] 检查自动分离配置失败:', error)
+      }
+    }
+
+    // 先预检查目标插件是否已在分离窗口中运行。
+    // 这里必须发生在主窗口 show / placeholder 之前，否则“只是聚焦已有分离窗口”的场景也会把主窗口 UI 弄脏。
+    const reusedDetached = await this.pluginManager.reuseDetachedSingletonIfExists(
+      appPath,
+      featureCode,
+      'launch-precheck'
+    )
+
+    if (reusedDetached) {
+      console.log('[Commands] 目标插件已在分离窗口运行，跳过主窗口占位态:', {
+        path: appPath,
+        featureCode
+      })
+      return { success: true }
+    }
+
+    if (shouldAutoDetach) {
+      const result = await this.pluginManager.createPluginInDetachedWindow(appPath, featureCode)
+
+      if (!result.success) {
+        console.error('[Commands] 在独立窗口中创建插件失败:', result.error)
+        // 如果创建失败，降级到主窗口模式
+        this.notifyRenderer('show-plugin-placeholder')
+        await this.pluginManager.createPluginView(appPath, featureCode, name)
+      } else {
+        // 创建成功，隐藏主窗口
+        this.mainWindow?.hide()
+      }
+    } else {
+      // 先通知渲染进程切换到插件视图模式
+      // 必须在 show() 之前发送，否则 show() 触发的 focus-search 事件
+      // 会在渲染进程中因 currentView 仍为 Search 而调用 hidePlugin()
+      this.notifyRenderer('show-plugin-placeholder')
+      // 检查主窗口是否可见
+      if (!this.mainWindow?.isVisible()) {
+        this.mainWindow?.show()
+      }
+
+      // 在主窗口中创建插件
+      await this.pluginManager.createPluginView(appPath, featureCode, name)
+    }
+
+    return { success: true }
+  }
+
+  /**
    * 启动应用或插件（统一接口）
    */
   public async launch(options: {
@@ -375,77 +455,15 @@ export class AppsAPI {
           )
         }
 
-        // 普通插件：创建插件视图
-        if (this.pluginManager) {
-          // 检查是否配置为自动分离
-          let shouldAutoDetach = false
-          if (pluginConfig) {
-            try {
-              const autoDetachPlugins = databaseAPI.dbGet('autoDetachPlugin')
-              if (
-                autoDetachPlugins &&
-                Array.isArray(autoDetachPlugins) &&
-                autoDetachPlugins.includes(pluginConfig.name)
-              ) {
-                shouldAutoDetach = true
-                console.log(`插件 ${pluginConfig.name} 配置为自动分离，直接在独立窗口中创建`)
-              }
-            } catch (error) {
-              console.error('[Commands] 检查自动分离配置失败:', error)
-            }
-          }
-
-          // 先预检查目标插件是否已在分离窗口中运行。
-          // 这里必须发生在主窗口 show / placeholder 之前，否则“只是聚焦已有分离窗口”的场景也会把主窗口 UI 弄脏。
-          const reusedDetached =
-            typeof (this.pluginManager as any).reuseDetachedSingletonIfExists === 'function'
-              ? await (this.pluginManager as any).reuseDetachedSingletonIfExists(
-                  appPath,
-                  featureCode || '',
-                  'launch-precheck'
-                )
-              : false
-
-          if (reusedDetached) {
-            console.log('[Commands] 目标插件已在分离窗口运行，跳过主窗口占位态:', {
-              path: appPath,
-              featureCode
-            })
-            return { success: true }
-          }
-
-          if (shouldAutoDetach) {
-            // 直接在独立窗口中创建插件
-            const result = await this.pluginManager.createPluginInDetachedWindow(
-              appPath,
-              featureCode || ''
-            )
-
-            if (!result.success) {
-              console.error('[Commands] 在独立窗口中创建插件失败:', result.error)
-              // 如果创建失败，降级到主窗口模式
-              this.notifyRenderer('show-plugin-placeholder')
-              await this.pluginManager.createPluginView(appPath, featureCode || '', name)
-            } else {
-              // 创建成功，隐藏主窗口
-              this.mainWindow?.hide()
-            }
-          } else {
-            // 先通知渲染进程切换到插件视图模式
-            // 必须在 show() 之前发送，否则 show() 触发的 focus-search 事件
-            // 会在渲染进程中因 currentView 仍为 Search 而调用 hidePlugin()
-            this.notifyRenderer('show-plugin-placeholder')
-            // 检查主窗口是否可见
-            if (!this.mainWindow?.isVisible()) {
-              this.mainWindow?.show()
-            }
-
-            // 在主窗口中创建插件
-            await this.pluginManager.createPluginView(appPath, featureCode || '', name)
-          }
-        }
-
-        return { success: true }
+        // 普通插件：创建插件视图编排逻辑
+        return await this.preparePluginLaunch(
+          {
+            path: appPath,
+            featureCode: featureCode || '',
+            name
+          },
+          pluginConfig
+        )
       } else if (type === 'file') {
         // 文件/文件夹类型：在文件管理器中定位
         console.log('[Commands] 在文件管理器中定位:', appPath)

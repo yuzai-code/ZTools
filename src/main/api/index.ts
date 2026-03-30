@@ -52,14 +52,12 @@ import translationManager from '../core/translationManager'
  * API管理器 - 统一初始化和管理所有API模块
  */
 class APIManager {
-  private mainWindow: BrowserWindow | null = null
   private pluginManager: PluginManager | null = null
 
   /**
    * 初始化所有API模块
    */
   public init(mainWindow: BrowserWindow, pluginManager: PluginManager): void {
-    this.mainWindow = mainWindow
     this.pluginManager = pluginManager
 
     // 初始化共享API
@@ -261,7 +259,12 @@ class APIManager {
   /**
    * 启动匹配到的插件命令
    */
-  private launchMatchedPlugin(plugin: any, feature: any, cmdLabel: string, cmdType: string): void {
+  private async launchMatchedPlugin(
+    plugin: any,
+    feature: any,
+    cmdLabel: string,
+    cmdType: string
+  ): Promise<void> {
     const launchOptions = {
       path: plugin.path,
       type: 'plugin' as const,
@@ -272,13 +275,7 @@ class APIManager {
     }
     console.log(`[API] 启动插件:`, launchOptions)
 
-    windowManager.refreshPreviousActiveWindow()
-
-    setTimeout(() => {
-      this.mainWindow?.show()
-    }, 50)
-
-    this.mainWindow?.webContents.send('ipc-launch', launchOptions)
+    await appsAPI.launch(launchOptions)
   }
 
   /**
@@ -338,7 +335,7 @@ class APIManager {
           return
         }
 
-        this.launchMatchedPlugin(plugin, result.feature, result.cmdLabel, result.cmdType)
+        await this.launchMatchedPlugin(plugin, result.feature, result.cmdLabel, result.cmdType)
       } else {
         // 格式: 指令名称（在所有插件和系统应用中搜索）
         const cmdName = target
@@ -386,7 +383,7 @@ class APIManager {
         // 唯一匹配，直接启动
         if (pluginMatches.length === 1) {
           const { plugin, feature, cmdLabel, cmdType } = pluginMatches[0]
-          this.launchMatchedPlugin(plugin, feature, cmdLabel, cmdType)
+          await this.launchMatchedPlugin(plugin, feature, cmdLabel, cmdType)
         } else if (directCommand) {
           await this.launchDirectCommand(directCommand)
         }

@@ -769,6 +769,8 @@ onMounted(async () => {
     }
 
     // 如果是插件类型，且没有传递 param.payload，则使用当前搜索框内容
+    // 由于全局快捷键已直接转调主进程直启，这里仅响应旧引用和 renderer 调用
+    // 因此这里主动带上输入框的内容作为搜索请求仍是合理的向后兼容逻辑。
     if (options.type === 'plugin' && (!options.param || !options.param.payload)) {
       console.log('[IPC Launch] 使用当前搜索框内容作为 payload:', searchQuery.value)
       launchOptions.param = {
