@@ -1,8 +1,9 @@
 import { exec } from 'child_process'
 import type { PluginManager } from '../../managers/pluginManager'
-import { BrowserWindow, clipboard, Notification, shell } from 'electron'
+import { BrowserWindow, clipboard, nativeImage, Notification, shell } from 'electron'
 import { promisify } from 'util'
 import { GLOBAL_SCROLLBAR_CSS } from '../../core/globalStyles'
+import { screenCapture } from '../../core/screenCapture'
 import windowManager from '../../managers/windowManager'
 import webSearchAPI from './webSearch'
 import databaseAPI from '../shared/database'
@@ -99,6 +100,9 @@ export async function executeSystemCommand(
     case 'color-picker':
       return handleColorPicker(ctx)
 
+    case 'screenshot':
+      return handleScreenshot(ctx)
+
     default:
       // 处理网页快开搜索引擎 (web-search-{id})
       if (command.startsWith('web-search-')) {
@@ -187,6 +191,29 @@ async function handleDynamicWebSearch(
     return { success: false, error: '未找到搜索引擎配置' }
   }
   return handleWebSearch(ctx, param, engine.url, engine.name)
+}
+
+async function handleScreenshot(ctx: SystemCommandContext): Promise<any> {
+  console.log('[SystemCmd] 执行截图')
+
+  try {
+    const result = await screenCapture(ctx.mainWindow || undefined, false)
+    if (!result.image) {
+      return { success: false, error: '未获取到截图内容' }
+    }
+
+    clipboard.writeImage(nativeImage.createFromDataURL(result.image))
+
+    new Notification({
+      title: 'ZTools',
+      body: '截图已复制到剪贴板'
+    }).show()
+
+    return { success: true }
+  } catch (error) {
+    console.error('[SystemCmd] 截图失败:', error)
+    return { success: false, error: String(error) }
+  }
 }
 
 async function handleOpenUrl(ctx: SystemCommandContext, param: any): Promise<any> {
