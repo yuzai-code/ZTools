@@ -230,6 +230,16 @@ export class InternalPluginAPI {
       return await (pluginsAPI as any).importDevPlugin(pluginJsonPath)
     })
 
+    ipcMain.handle(
+      'internal:upsert-dev-project-by-config-path',
+      async (event, pluginJsonPath: string) => {
+        if (!requireInternalPlugin(this.pluginManager, event)) {
+          throw new PermissionDeniedError('internal:upsert-dev-project-by-config-path')
+        }
+        return await (pluginsAPI as any).upsertDevProjectByConfigPath(pluginJsonPath)
+      }
+    )
+
     ipcMain.handle('internal:get-dev-projects', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:get-dev-projects')

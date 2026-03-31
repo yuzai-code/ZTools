@@ -30,6 +30,7 @@ import {
   insertDevProjectAtTop,
   mergeLegacyDevelopmentProjects,
   migrateLegacyDevProjects,
+  rebindDevProjectFromConfig,
   readDevProjectRecords,
   readDevPluginLocalBindingsDoc,
   readDevPluginRegistryDoc,
@@ -163,6 +164,9 @@ export class PluginsAPI {
     ipcMain.handle('import-plugin', () => this.importPlugin())
     ipcMain.handle('import-dev-plugin', (_event, pluginJsonPath?: string) =>
       this.importDevPlugin(pluginJsonPath)
+    )
+    ipcMain.handle('upsert-dev-project-by-config-path', (_event, pluginJsonPath: string) =>
+      this.upsertDevProjectByConfigPath(pluginJsonPath)
     )
     ipcMain.handle('get-dev-projects', () => this.getDevProjects())
     ipcMain.handle('update-dev-projects-order', (_event, pluginNames: string[]) =>
@@ -1346,6 +1350,82 @@ export class PluginsAPI {
       }
     } catch (error: unknown) {
       console.error('[Plugins] 添加开发中插件失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 根据传入的 plugin.json 路径导入开发项目。
+   * 若 name 已存在，则更新当前设备绑定路径；否则新建项目。
+   */
+  private async upsertDevProjectByConfigPath(pluginJsonPath: string): Promise<any> {
+    try {
+      if (!pluginJsonPath) {
+        return { success: false, error: '未提供 plugin.json 路径' }
+      }
+
+      const normalizedConfigPath = path.resolve(pluginJsonPath)
+      if (path.basename(normalizedConfigPath) !== 'plugin.json') {
+        return { success: false, error: '请选择 plugin.json 文件' }
+      }
+
+      let pluginConfig: any
+      try {
+        pluginConfig = await this.readPluginConfigFromFile(normalizedConfigPath)
+      } catch {
+        return { success: false, error: 'plugin.json 格式错误' }
+      }
+
+      if (!pluginConfig.name) {
+        return { success: false, error: 'plugin.json 缺少 name 字段' }
+      }
+
+      if (isBundledInternalPlugin(pluginConfig.name)) {
+        return { success: false, error: '内置插件不能作为开发项目导入' }
+      }
+
+      const existingPlugins = this.readInstalledPlugins()
+      const validation = this.validatePluginConfig(
+        pluginConfig,
+        existingPlugins.filter((plugin) => plugin?.name !== pluginConfig.name)
+      )
+      if (!validation.valid) {
+        return { success: false, error: validation.error }
+      }
+
+      const state = await this.readDevProjectState()
+      const projectName = pluginConfig.name
+      if (!state.registry.projects[projectName]) {
+        return await this.importDevPlugin(normalizedConfigPath)
+      }
+
+      const rebound = rebindDevProjectFromConfig({
+        registry: state.registry,
+        localBindings: state.localBindings,
+        pluginJsonPath: normalizedConfigPath,
+        pluginConfig
+      })
+      if (!rebound.success) {
+        return { success: false, error: rebound.reason || '开发项目重绑失败' }
+      }
+
+      this.writeDevProjectState(rebound.registry, rebound.localBindings)
+      const validated = await this.validateAndRefreshDevProjectState(projectName, {
+        registry: rebound.registry,
+        localBindings: rebound.localBindings
+      })
+      if (!validated.success) {
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发项目 upsert 完成:', {
+        projectName,
+        configPath: normalizedConfigPath
+      })
+      return { success: true, pluginName: projectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] upsert 开发项目失败:', error)
       return { success: false, error: error instanceof Error ? error.message : '未知错误' }
     }
   }

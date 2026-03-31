@@ -686,6 +686,11 @@ window.ztools = {
       await electron.ipcRenderer.invoke('internal:install-plugin-from-path', zpxPath),
     importDevPlugin: async (pluginPath) =>
       await electron.ipcRenderer.invoke('internal:import-dev-plugin', pluginPath),
+    upsertDevProjectByConfigPath: async (pluginJsonPath) =>
+      await electron.ipcRenderer.invoke(
+        'internal:upsert-dev-project-by-config-path',
+        pluginJsonPath
+      ),
     removeDevProject: async (pluginName) =>
       await electron.ipcRenderer.invoke('internal:remove-dev-project', pluginName),
     installDevPlugin: async (pluginPath) =>

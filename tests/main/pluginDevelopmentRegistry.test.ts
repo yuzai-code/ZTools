@@ -8,6 +8,7 @@ import {
   mergeLegacyDevelopmentProjects,
   migrateLegacyDevProjects,
   normalizeDevelopmentProject,
+  rebindDevProjectFromConfig,
   readDevPluginLocalBindingsDoc,
   readDevPluginRegistryDoc,
   upsertDevProjectFromConfig,
@@ -467,5 +468,83 @@ describe('pluginDevelopmentRegistry', () => {
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((item) => item.name)
     ).toEqual(['alpha', 'beta'])
+  })
+
+  it('rebinds an existing project to a new config path while preserving sortOrder', () => {
+    const result = rebindDevProjectFromConfig({
+      registry: {
+        version: 2,
+        projects: {
+          demo: {
+            name: 'demo',
+            configSnapshot: { name: 'demo', version: '1.0.0' },
+            addedAt: '2026-03-29T00:00:00.000Z',
+            updatedAt: '2026-03-29T00:00:00.000Z',
+            sortOrder: 3
+          }
+        }
+      },
+      localBindings: {
+        version: 1,
+        deviceId: 'device-1',
+        updatedAt: '2026-03-29T00:00:00.000Z',
+        bindings: {
+          demo: {
+            name: 'demo',
+            projectPath: '/workspace/old-demo',
+            configPath: '/workspace/old-demo/plugin.json',
+            status: 'ready',
+            lastValidatedAt: '2026-03-29T00:00:00.000Z',
+            updatedAt: '2026-03-29T00:00:00.000Z'
+          }
+        }
+      },
+      pluginJsonPath: '/workspace/new-demo/plugin.json',
+      pluginConfig: { name: 'demo', version: '2.0.0', title: 'Demo' },
+      now: () => '2026-03-31T10:00:00.000Z'
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.localBindings.bindings.demo.projectPath).toBe('/workspace/new-demo')
+    expect(result.localBindings.bindings.demo.configPath).toBe('/workspace/new-demo/plugin.json')
+    expect(result.registry.projects.demo.sortOrder).toBe(3)
+    expect(result.registry.projects.demo.configSnapshot.version).toBe('2.0.0')
+  })
+
+  it('keeps the legacy upsert helper rejecting same-name imports from a different path', () => {
+    const result = upsertDevProjectFromConfig({
+      registry: {
+        version: 2,
+        projects: {
+          beta: {
+            name: 'beta',
+            configSnapshot: { name: 'beta', version: '1.0.0' },
+            addedAt: '2026-03-29T00:00:00.000Z',
+            updatedAt: '2026-03-29T00:00:00.000Z',
+            sortOrder: 0
+          }
+        }
+      },
+      localBindings: {
+        version: 1,
+        deviceId: 'device-1',
+        updatedAt: '2026-03-29T00:00:00.000Z',
+        bindings: {
+          beta: {
+            name: 'beta',
+            projectPath: '/workspace/beta-old',
+            configPath: '/workspace/beta-old/plugin.json',
+            status: 'ready',
+            lastValidatedAt: '2026-03-29T00:00:00.000Z',
+            updatedAt: '2026-03-29T00:00:00.000Z'
+          }
+        }
+      },
+      pluginPath: '/workspace/beta-new',
+      pluginConfig: { name: 'beta', version: '1.0.0', title: 'Beta' }
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.reason).toContain('/workspace/beta-old')
   })
 })

@@ -98,6 +98,19 @@ export interface UpsertDevProjectFromConfigOptions {
   now?: () => string
 }
 
+export interface RebindDevProjectFromConfigOptions {
+  /** 现有开发项目主记录。 */
+  registry: DevPluginRegistryDoc
+  /** 当前设备本地绑定。 */
+  localBindings: DevPluginLocalBindingsDoc
+  /** 传入的 plugin.json 绝对路径。 */
+  pluginJsonPath: string
+  /** 读取到的 plugin.json 配置。 */
+  pluginConfig: PluginConfigLite
+  /** 允许注入时钟，便于测试。 */
+  now?: () => string
+}
+
 export interface UpsertDevProjectFromConfigResult {
   /** 是否成功完成登记。 */
   success: boolean
@@ -745,6 +758,81 @@ export function upsertDevProjectFromConfig(
       name: projectName,
       projectPath: normalizedPath,
       configPath: path.join(normalizedPath, 'plugin.json'),
+      status: 'ready',
+      lastValidatedAt: operationTimestamp,
+      updatedAt: operationTimestamp
+    }
+  }
+
+  return {
+    success: true,
+    registry: {
+      version: DEV_PLUGIN_REGISTRY_VERSION,
+      projects: nextProjects
+    },
+    localBindings: {
+      version: DEV_PLUGIN_LOCAL_BINDINGS_VERSION,
+      deviceId: options.localBindings.deviceId,
+      updatedAt: operationTimestamp,
+      bindings: nextBindings
+    }
+  }
+}
+
+/**
+ * 在保留项目 identity 和共享顺序的前提下，重绑当前设备的 plugin.json 路径。
+ */
+export function rebindDevProjectFromConfig(
+  options: RebindDevProjectFromConfigOptions
+): UpsertDevProjectFromConfigResult {
+  const clock = options.now ?? nowIsoString
+  const projectName = options.pluginConfig.name
+  if (!projectName) {
+    return {
+      success: false,
+      reason: 'Project config requires a name',
+      registry: options.registry,
+      localBindings: options.localBindings
+    }
+  }
+
+  if (BUILT_IN_PLUGIN_NAMES.has(projectName)) {
+    return {
+      success: false,
+      reason: `Project name ${projectName} is not allowed`,
+      registry: options.registry,
+      localBindings: options.localBindings
+    }
+  }
+
+  const existing = options.registry.projects[projectName]
+  if (!existing) {
+    return {
+      success: false,
+      reason: `Project ${projectName} does not exist`,
+      registry: options.registry,
+      localBindings: options.localBindings
+    }
+  }
+
+  const operationTimestamp = clock()
+  const normalizedConfigPath = normalizeProjectPath(options.pluginJsonPath)
+  const normalizedPath = normalizeProjectPath(path.dirname(normalizedConfigPath))
+
+  const nextProjects = {
+    ...options.registry.projects,
+    [projectName]: {
+      ...existing,
+      configSnapshot: { ...options.pluginConfig },
+      updatedAt: operationTimestamp
+    }
+  }
+  const nextBindings: Record<string, DevProjectLocalBinding> = {
+    ...options.localBindings.bindings,
+    [projectName]: {
+      name: projectName,
+      projectPath: normalizedPath,
+      configPath: normalizedConfigPath,
       status: 'ready',
       lastValidatedAt: operationTimestamp,
       updatedAt: operationTimestamp
