@@ -75,6 +75,22 @@ const pastedFilesData = ref<FileItem[] | null>(null)
 // 粘贴的文本数据
 const pastedTextData = ref<string | null>(null)
 
+// 将当前搜索输入和粘贴态同步到主进程，供应用快捷键启动时复用
+function syncLaunchContext(): void {
+  window.ztools.updateLaunchContext({
+    searchQuery: searchQuery.value,
+    pastedImage: pastedImageData.value,
+    pastedFiles: pastedFilesData.value
+      ? pastedFilesData.value.map((file) => ({
+          path: file.path,
+          name: file.name,
+          isDirectory: file.isDirectory
+        }))
+      : null,
+    pastedText: pastedTextData.value
+  })
+}
+
 // 处理搜索框输入变化（由 SearchBox @update:model-value 触发，仅用户输入会触发）
 function handleSearchQueryChange(value: string): void {
   searchQuery.value = value
@@ -109,6 +125,11 @@ watch(pastedTextData, (newValue) => {
     pastedImageData.value = null
     pastedFilesData.value = null
   }
+})
+
+// 监听搜索输入和粘贴态变化，同步到主进程
+watch([searchQuery, pastedImageData, pastedFilesData, pastedTextData], () => {
+  syncLaunchContext()
 })
 
 // 动态调整窗口高度
@@ -391,13 +412,20 @@ async function handleKeydown(event: KeyboardEvent): Promise<void> {
     return
   }
 
-  // Tab 键：如果配置了目标指令，则启动该指令
+  // Tab 键：根据设置执行目标指令或切换选中项
   if (event.key === 'Tab') {
-    const target = windowStore.tabTargetCommand
-    if (target && currentView.value === ViewMode.Search) {
-      event.preventDefault()
-      launchTabTarget(target, searchQuery.value)
-      return
+    if (currentView.value === ViewMode.Search) {
+      if (windowStore.tabKeyFunction === 'target-command') {
+        const target = windowStore.tabTargetCommand
+        if (target) {
+          event.preventDefault()
+          launchTabTarget(target, searchQuery.value)
+        }
+        return
+      } else {
+        searchResultsRef.value?.handleKeydown(event)
+        return
+      }
     }
   }
 
@@ -469,6 +497,8 @@ async function handleKeydown(event: KeyboardEvent): Promise<void> {
 
 // 初始化
 onMounted(async () => {
+  syncLaunchContext()
+
   // 从 store 加载设置和应用数据
   await Promise.all([
     windowStore.loadSettings(),
@@ -693,6 +723,12 @@ onMounted(async () => {
     windowStore.updateTabTargetCommand(target)
   })
 
+  // 监听 Tab 键功能更新事件
+  window.ztools.onUpdateTabKeyFunction((mode: 'navigate' | 'target-command') => {
+    console.log('更新 Tab 键功能:', mode)
+    windowStore.updateTabKeyFunction(mode)
+  })
+
   // 监听空格打开指令配置更新事件
   window.ztools.onUpdateSpaceOpenCommand((enabled: boolean) => {
     console.log('更新空格打开指令:', enabled)
@@ -769,6 +805,8 @@ onMounted(async () => {
     }
 
     // 如果是插件类型，且没有传递 param.payload，则使用当前搜索框内容
+    // 由于全局快捷键已直接转调主进程直启，这里仅响应旧引用和 renderer 调用
+    // 因此这里主动带上输入框的内容作为搜索请求仍是合理的向后兼容逻辑。
     if (options.type === 'plugin' && (!options.param || !options.param.payload)) {
       console.log('[IPC Launch] 使用当前搜索框内容作为 payload:', searchQuery.value)
       launchOptions.param = {
@@ -826,12 +864,10 @@ onMounted(async () => {
     })
   })
 
-  // 监听插件变化事件（安装或删除插件后刷新指令列表）
+  // 监听插件变化事件（安装、删除、禁用状态变化后刷新相关数据）
   window.ztools.onPluginsChanged(async () => {
-    console.log('插件列表已变化，重新加载指令列表和用户数据')
-    // 先刷新指令列表，再刷新历史/固定（历史过滤依赖最新的指令列表）
-    await commandDataStore.loadCommands()
-    await commandDataStore.reloadUserData()
+    console.log('插件列表已变化，重新加载插件可用性相关数据')
+    await commandDataStore.reloadPluginAvailabilityData()
   })
 
   // 监听更新下载完成事件

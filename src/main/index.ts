@@ -3,6 +3,7 @@ import { app, BrowserWindow, session, webContents } from 'electron'
 import log from 'electron-log'
 import path from 'path'
 import api from './api/index'
+import pluginsAPI from './api/renderer/plugins'
 import appWatcher from './appWatcher'
 import detachedWindowManager from './core/detachedWindowManager'
 import floatingBallManager from './core/floatingBallManager'
@@ -141,13 +142,14 @@ app.whenReady().then(async () => {
   if (mainWindow) {
     try {
       const autoStartPlugins = api.dbGet('autoStartPlugin')
+      const disabledPlugins = pluginsAPI.getDisabledPluginSet()
       if (autoStartPlugins && Array.isArray(autoStartPlugins) && autoStartPlugins.length > 0) {
         console.log('[Main] 开始处理自动启动插件:', { count: autoStartPlugins.length })
         const plugins = api.dbGet('plugins')
         if (plugins && Array.isArray(plugins)) {
           for (const pluginRef of autoStartPlugins) {
             const plugin = resolvePluginByVariantRef(plugins, pluginRef)
-            if (plugin?.path) {
+            if (plugin?.path && !disabledPlugins.has(plugin.path)) {
               const normalizedRef = normalizePluginVariantRef(pluginRef)
               console.log('[Main] 自动启动插件:', {
                 pluginName: plugin.name,
@@ -205,9 +207,11 @@ app.on('before-quit', (event) => {
     // 不是主动退出（如 Command+Q），阻止退出
     event.preventDefault()
     console.log('[Main] 阻止了 Command+Q 退出，请使用托盘菜单退出')
+    const hasActivePlugin = pluginManager.getCurrentPluginPath() !== null
     // 仅在 killPlugin 内置快捷键启用时才隐藏窗口；
     // 禁用时意味着用户希望把 Cmd+Q 用作其他用途（如呼出快捷键），保持窗口可见
-    if (windowManager.isKillPluginShortcutEnabled()) {
+    // 插件模式下的 Cmd+Q 由 pluginManager 负责终止插件并返回搜索页，这里不再隐藏主窗口
+    if (windowManager.isKillPluginShortcutEnabled() && !hasActivePlugin) {
       windowManager.hideWindow(false)
     }
   } else {

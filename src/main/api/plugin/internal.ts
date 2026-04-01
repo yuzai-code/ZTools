@@ -37,7 +37,7 @@ class PermissionDeniedError extends Error {
  * 格式化时间为 YYYYMMDDHHmmss
  */
 function formatTimestamp(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
+  const pad = (n: number): string => String(n).padStart(2, '0')
   return (
     String(date.getFullYear()) +
     pad(date.getMonth() + 1) +
@@ -187,6 +187,23 @@ export class InternalPluginAPI {
       }
       return await (pluginsAPI as any).getPlugins()
     })
+
+    ipcMain.handle('internal:get-disabled-plugins', async (event) => {
+      if (!requireInternalPlugin(this.pluginManager, event)) {
+        throw new PermissionDeniedError('internal:get-disabled-plugins')
+      }
+      return (pluginsAPI as any).getDisabledPlugins()
+    })
+
+    ipcMain.handle(
+      'internal:set-plugin-disabled',
+      async (event, pluginPath: string, disabled: boolean) => {
+        if (!requireInternalPlugin(this.pluginManager, event)) {
+          throw new PermissionDeniedError('internal:set-plugin-disabled')
+        }
+        return await (pluginsAPI as any).setPluginDisabled(pluginPath, disabled)
+      }
+    )
 
     ipcMain.handle('internal:get-all-plugins', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
@@ -521,7 +538,7 @@ export class InternalPluginAPI {
       return await (aiModelsAPI as any).addModel(model)
     })
 
-    ipcMain.handle('internal:ai-models-update', async (event, model: any) => {
+    ipcMain.handle('internal:ai-models-update', async (event, model: any): Promise<any> => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:ai-models-update')
       }
@@ -784,6 +801,19 @@ export class InternalPluginAPI {
       this.mainWindow?.webContents.send('update-tab-target', target)
       return { success: true }
     })
+
+    // 通知主渲染进程更新 Tab 键功能配置
+    ipcMain.handle(
+      'internal:update-tab-key-function',
+      async (event, mode: 'navigate' | 'target-command') => {
+        if (!requireInternalPlugin(this.pluginManager, event)) {
+          throw new PermissionDeniedError('internal:update-tab-key-function')
+        }
+        // 广播到主渲染进程
+        this.mainWindow?.webContents.send('update-tab-key-function', mode)
+        return { success: true }
+      }
+    )
 
     // 通知主渲染进程更新空格打开指令配置
     ipcMain.handle('internal:update-space-open-command', async (event, enabled: boolean) => {

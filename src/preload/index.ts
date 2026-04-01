@@ -33,6 +33,12 @@ const api = {
     ipcRenderer.invoke('launch-as-admin', appPath, name),
   hideWindow: () => ipcRenderer.send('hide-window'),
   resizeWindow: (height: number) => ipcRenderer.send('resize-window', height),
+  updateLaunchContext: (context: {
+    searchQuery: string
+    pastedImage: string | null
+    pastedFiles: Array<{ path: string; name: string; isDirectory: boolean }> | null
+    pastedText: string | null
+  }) => ipcRenderer.send('update-launch-context', context),
   getWindowPosition: () => ipcRenderer.invoke('get-window-position'),
   setWindowPosition: (x: number, y: number) => ipcRenderer.send('set-window-position', x, y),
   setWindowSizeLock: (lock: boolean) => ipcRenderer.send('set-window-size-lock', lock),
@@ -56,6 +62,9 @@ const api = {
   showContextMenu: (menuItems: any[]) => ipcRenderer.invoke('show-context-menu', menuItems),
   getPlugins: () => ipcRenderer.invoke('get-plugins'),
   getAllPlugins: () => ipcRenderer.invoke('get-all-plugins'),
+  getDisabledPlugins: () => ipcRenderer.invoke('get-disabled-plugins'),
+  setPluginDisabled: (pluginPath: string, disabled: boolean) =>
+    ipcRenderer.invoke('set-plugin-disabled', pluginPath, disabled),
   importPlugin: () => ipcRenderer.invoke('import-plugin'),
   // 导入开发中的插件工程，可选直接传入 plugin.json 路径
   importDevPlugin: (pluginJsonPath?: string) =>
@@ -216,6 +225,9 @@ const api = {
   },
   onUpdateTabTarget: (callback: (target: string) => void) => {
     ipcRenderer.on('update-tab-target', (_event, target) => callback(target))
+  },
+  onUpdateTabKeyFunction: (callback: (mode: 'navigate' | 'target-command') => void) => {
+    ipcRenderer.on('update-tab-key-function', (_event, mode) => callback(mode))
   },
   onUpdateSpaceOpenCommand: (callback: (enabled: boolean) => void) => {
     ipcRenderer.on('update-space-open-command', (_event, enabled) => callback(enabled))
@@ -457,6 +469,12 @@ declare global {
       }) => Promise<void>
       hideWindow: () => void
       resizeWindow: (height: number) => void
+      updateLaunchContext: (context: {
+        searchQuery: string
+        pastedImage: string | null
+        pastedFiles: Array<{ path: string; name: string; isDirectory: boolean }> | null
+        pastedText: string | null
+      }) => void
       setWindowOpacity: (opacity: number) => void
       getWindowMaterial: () => Promise<'mica' | 'acrylic' | 'none'>
       setTrayIconVisible: (visible: boolean) => Promise<void>
@@ -481,6 +499,11 @@ declare global {
       showContextMenu: (menuItems: any[]) => Promise<void>
       getPlugins: () => Promise<any[]>
       getAllPlugins: () => Promise<any[]>
+      getDisabledPlugins: () => Promise<string[]>
+      setPluginDisabled: (
+        pluginPath: string,
+        disabled: boolean
+      ) => Promise<{ success: boolean; error?: string }>
       importPlugin: () => Promise<{ success: boolean; error?: string }>
       // 导入开发中的插件工程，可选直接传入 plugin.json 路径
       importDevPlugin: (pluginJsonPath?: string) => Promise<{ success: boolean; error?: string }>
@@ -605,6 +628,9 @@ declare global {
         callback: (data: { pluginPath: string; placeholder: string }) => void
       ) => void
       onUpdateSubInputVisible: (callback: (visible: boolean) => void) => void
+      onUpdateTabTarget: (callback: (target: string) => void) => void
+      onUpdateTabKeyFunction: (callback: (mode: 'navigate' | 'target-command') => void) => void
+      onUpdateSpaceOpenCommand: (callback: (enabled: boolean) => void) => void
       onUpdateShowRecentInSearch: (callback: (showRecentInSearch: boolean) => void) => void
       onUpdateMatchRecommendation: (callback: (showMatchRecommendation: boolean) => void) => void
       // 数据库相关（主程序专用，直接操作 ZTOOLS 命名空间）

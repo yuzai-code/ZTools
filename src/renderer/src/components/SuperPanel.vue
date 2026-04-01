@@ -13,28 +13,49 @@
         />
         <span class="header-text">超级面板</span>
         <div class="header-spacer" />
-        <div
-          class="header-menu-btn"
-          :class="{ 'window-match-blink': windowMatchBlink }"
-          title="窗口匹配"
-          @click="openWindowMatch"
-          @animationend="windowMatchBlink = false"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <rect
-              x="1"
-              y="2"
-              width="14"
-              height="11"
-              rx="1.5"
-              stroke="currentColor"
-              stroke-width="1.3"
-              fill="none"
-            />
-            <rect x="1" y="2" width="14" height="3" rx="1.5" fill="currentColor" opacity="0.3" />
-            <circle cx="3" cy="3.5" r="0.7" fill="currentColor" />
-            <circle cx="5" cy="3.5" r="0.7" fill="currentColor" />
-          </svg>
+        <div class="header-actions">
+          <div
+            class="header-menu-btn compact-btn"
+            :class="{ 'btn-disabled': !currentWindowInfo }"
+            :title="currentWindowInfo ? `屏蔽 ${currentWindowInfo.app} 弹出面板` : '屏蔽面板弹出'"
+            @click="addBlockedApp"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3" fill="none" />
+              <line
+                x1="3.4 "
+                y1="12.6"
+                x2="12.6"
+                y2="3.4"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <div
+            class="header-menu-btn compact-btn"
+            :class="{ 'window-match-blink': windowMatchBlink }"
+            title="窗口匹配"
+            @click="openWindowMatch"
+            @animationend="windowMatchBlink = false"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <rect
+                x="1"
+                y="2"
+                width="14"
+                height="11"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.3"
+                fill="none"
+              />
+              <rect x="1" y="2" width="14" height="3" rx="1.5" fill="currentColor" opacity="0.3" />
+              <circle cx="3" cy="3.5" r="0.7" fill="currentColor" />
+              <circle cx="5" cy="3.5" r="0.7" fill="currentColor" />
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -126,28 +147,49 @@
         </div>
         <span class="header-text">{{ clipboardDescription }}</span>
         <div class="header-spacer" />
-        <div
-          class="header-menu-btn"
-          :class="{ 'window-match-blink': windowMatchBlink }"
-          title="窗口匹配"
-          @click="openWindowMatch"
-          @animationend="windowMatchBlink = false"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <rect
-              x="1"
-              y="2"
-              width="14"
-              height="11"
-              rx="1.5"
-              stroke="currentColor"
-              stroke-width="1.3"
-              fill="none"
-            />
-            <rect x="1" y="2" width="14" height="3" rx="1.5" fill="currentColor" opacity="0.3" />
-            <circle cx="3" cy="3.5" r="0.7" fill="currentColor" />
-            <circle cx="5" cy="3.5" r="0.7" fill="currentColor" />
-          </svg>
+        <div class="header-actions">
+          <div
+            class="header-menu-btn compact-btn"
+            :class="{ 'btn-disabled': !currentWindowInfo }"
+            :title="currentWindowInfo ? `屏蔽 ${currentWindowInfo.app} 弹出面板` : '屏蔽面板弹出'"
+            @click="addBlockedApp"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3" fill="none" />
+              <line
+                x1="3.4"
+                y1="12.6"
+                x2="12.6"
+                y2="3.4"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <div
+            class="header-menu-btn compact-btn"
+            :class="{ 'window-match-blink': windowMatchBlink }"
+            title="窗口匹配"
+            @click="openWindowMatch"
+            @animationend="windowMatchBlink = false"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <rect
+                x="1"
+                y="2"
+                width="14"
+                height="11"
+                rx="1.5"
+                stroke="currentColor"
+                stroke-width="1.3"
+                fill="none"
+              />
+              <rect x="1" y="2" width="14" height="3" rx="1.5" fill="currentColor" opacity="0.3" />
+              <circle cx="3" cy="3.5" r="0.7" fill="currentColor" />
+              <circle cx="5" cy="3.5" r="0.7" fill="currentColor" />
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -192,30 +234,6 @@
     <!-- 加载中 -->
     <div v-else class="loading-state">
       <span class="loading-text">加载中...</span>
-    </div>
-
-    <!-- 底部工具栏 -->
-    <div v-if="mode !== 'loading'" class="panel-footer">
-      <div class="footer-spacer" />
-      <div
-        class="header-menu-btn"
-        :class="{ 'btn-disabled': !currentWindowInfo }"
-        :title="currentWindowInfo ? `屏蔽 ${currentWindowInfo.app} 弹出面板` : '屏蔽面板弹出'"
-        @click="addBlockedApp"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3" fill="none" />
-          <line
-            x1="3.4"
-            y1="12.6"
-            x2="12.6"
-            y2="3.4"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-          />
-        </svg>
-      </div>
     </div>
 
     <!-- 文件夹弹窗 - 覆盖式 -->
@@ -1182,15 +1200,15 @@ onUnmounted(() => {
 .search-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--divider-color);
   flex-shrink: 0;
 }
 
 .header-menu-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1206,9 +1224,21 @@ onUnmounted(() => {
   color: var(--text-color);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.compact-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+
 .header-avatar {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -1224,15 +1254,15 @@ onUnmounted(() => {
 }
 
 .header-avatar-placeholder {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--primary-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-on-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
   flex-shrink: 0;
 }
@@ -1473,19 +1503,6 @@ onUnmounted(() => {
 
 /* ========== 标题栏间距 ========== */
 .header-spacer {
-  flex: 1;
-}
-
-/* ========== 底部工具栏 ========== */
-.panel-footer {
-  display: flex;
-  align-items: center;
-  padding: 6px 16px;
-  border-top: 1px solid var(--divider-color);
-  flex-shrink: 0;
-}
-
-.footer-spacer {
   flex: 1;
 }
 

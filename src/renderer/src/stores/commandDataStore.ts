@@ -183,6 +183,23 @@ export const useCommandDataStore = defineStore('commandData', () => {
   // 禁用指令列表
   const disabledCommands = ref<string[]>([])
   const DISABLED_COMMANDS_KEY = 'disable-commands'
+  const disabledPluginPaths = ref<string[]>([])
+
+  function setDisabledPluginPaths(paths: unknown): void {
+    disabledPluginPaths.value = Array.isArray(paths)
+      ? paths.filter((item): item is string => typeof item === 'string')
+      : []
+  }
+
+  function getEnabledPluginPaths(plugins: any[], disabledPaths?: string[]): Set<string> {
+    const paths = disabledPaths ?? disabledPluginPaths.value
+    const disabledPluginPathSet = new Set(paths)
+    return new Set(
+      plugins
+        .filter((plugin: any) => !disabledPluginPathSet.has(plugin.path))
+        .map((p: any) => p.path)
+    )
+  }
   // 搜索偏好记录（搜索词 -> 上次选中的指令标识）
   const searchPreference = ref<
     Record<string, { path: string; featureCode?: string; name: string }>
@@ -287,6 +304,16 @@ export const useCommandDataStore = defineStore('commandData', () => {
     }
   }
 
+  async function loadDisabledPlugins(): Promise<void> {
+    try {
+      const data = await window.ztools.getDisabledPlugins()
+      setDisabledPluginPaths(data)
+    } catch (error) {
+      console.error('加载禁用插件列表失败:', error)
+      disabledPluginPaths.value = []
+    }
+  }
+
   // 加载搜索偏好记录
   async function loadSearchPreference(): Promise<void> {
     try {
@@ -330,7 +357,7 @@ export const useCommandDataStore = defineStore('commandData', () => {
 
     try {
       // 先加载禁用指令列表和指令列表，再加载历史记录和固定列表（历史记录清理需要依赖指令列表）
-      await loadDisabledCommands()
+      await Promise.all([loadDisabledCommands(), loadDisabledPlugins()])
       await loadCommands()
       await Promise.all([
         loadHistoryData(),
@@ -447,13 +474,12 @@ export const useCommandDataStore = defineStore('commandData', () => {
       ])
 
       if (data && Array.isArray(data)) {
-        // 获取所有已安装插件的路径 Set
-        const installedPluginPaths = new Set(plugins.map((p: any) => p.path))
+        const enabledPluginPaths = getEnabledPluginPaths(plugins)
 
-        // 过滤掉已卸载的插件
+        // 过滤掉已卸载或已禁用的插件
         const filteredData = data.filter((item: any) => {
           if (item.type === 'plugin') {
-            return installedPluginPaths.has(item.path)
+            return enabledPluginPaths.has(item.path)
           }
           return true
         })
@@ -473,14 +499,22 @@ export const useCommandDataStore = defineStore('commandData', () => {
     await Promise.all([loadHistoryData(), loadPinnedData()])
   }
 
+  async function reloadPluginAvailabilityData(): Promise<void> {
+    await Promise.all([loadCommands(), reloadUserData()])
+  }
+
   // 加载指令列表
   async function loadCommands(): Promise<void> {
     loading.value = true
     try {
-      const [rawApps, plugins] = await Promise.all([
+      const [rawApps, plugins, disabledPlugins] = await Promise.all([
         window.ztools.getApps(),
-        window.ztools.getAllPlugins() // 使用 getAllPlugins 获取所有插件（包括 system）
+        window.ztools.getAllPlugins(), // 使用 getAllPlugins 获取所有插件（包括 system）
+        window.ztools.getDisabledPlugins()
       ])
+      setDisabledPluginPaths(disabledPlugins)
+      const enabledPluginPaths = getEnabledPluginPaths(plugins)
+      const enabledPlugins = plugins.filter((plugin: any) => enabledPluginPaths.has(plugin.path))
 
       // 处理本地应用指令
       const appItems = rawApps.flatMap((app) => {
@@ -525,7 +559,7 @@ export const useCommandDataStore = defineStore('commandData', () => {
       const regexItems: Command[] = [] // 正则匹配指令
       const mainPushItems: MainPushFeature[] = [] // mainPush 功能列表
 
-      for (const plugin of plugins) {
+      for (const plugin of enabledPlugins) {
         if (plugin.features && Array.isArray(plugin.features) && plugin.features.length > 0) {
           const pluginSource: PluginSource = plugin.isDevelopment ? 'development' : 'installed'
           const devBadge = plugin.isDevelopment ? 'DEV' : undefined
@@ -1227,12 +1261,18 @@ export const useCommandDataStore = defineStore('commandData', () => {
   // 获取固定列表（自动同步最新数据）
   function getPinnedCommands(): Command[] {
     // 同步固定列表的数据，确保使用最新的路径和图标
-    return pinnedCommands.value.map((pinnedItem) => {
-      const currentCommand = findCurrentCommandMatch(pinnedItem)
+    return pinnedCommands.value
+      .map((pinnedItem) => {
+        const currentCommand = findCurrentCommandMatch(pinnedItem)
 
-      // 如果找到了最新数据，使用最新的；否则使用固定列表中的
-      return currentCommand || pinnedItem
-    })
+        // 如果插件当前不可用（如被禁用），则不展示
+        if (!currentCommand && pinnedItem.type === 'plugin') {
+          return null
+        }
+
+        return currentCommand || pinnedItem
+      })
+      .filter((item): item is Command => item !== null)
   }
 
   // 更新固定列表顺序
@@ -1388,6 +1428,9 @@ export const useCommandDataStore = defineStore('commandData', () => {
     superPanelPinned,
     loadSuperPanelPinnedData,
     isPinnedToSuperPanel,
+
+    // 插件可用性刷新
+    reloadPluginAvailabilityData,
 
     // 搜索偏好
     saveSearchPreference

@@ -54,6 +54,7 @@ import { getPluginDataPrefix } from '../../../shared/pluginRuntimeNamespace'
 const PLUGIN_DIR = path.join(app.getPath('userData'), 'plugins')
 const PLUGIN_MARKET_STOREFRONT_CACHE_KEY = 'plugin-market-storefront'
 const PLUGIN_MARKET_STOREFRONT_FINGERPRINT_CACHE_KEY = 'plugin-market-storefront-fingerprint'
+const DISABLED_PLUGINS_KEY = 'disabled-plugins'
 
 type PluginMarketPlugin = {
   name: string
@@ -151,6 +152,7 @@ type PluginMarketResult = {
 export class PluginsAPI {
   private mainWindow: Electron.BrowserWindow | null = null
   private pluginManager: PluginManager | null = null
+  private disabledPluginPathSet: Set<string> | null = null
 
   public init(mainWindow: Electron.BrowserWindow, pluginManager: PluginManager): void {
     this.mainWindow = mainWindow
@@ -161,6 +163,10 @@ export class PluginsAPI {
   private setupIPC(): void {
     ipcMain.handle('get-plugins', () => this.getPlugins())
     ipcMain.handle('get-all-plugins', () => this.getAllPlugins())
+    ipcMain.handle('get-disabled-plugins', () => this.getDisabledPlugins())
+    ipcMain.handle('set-plugin-disabled', (_event, pluginPath: string, disabled: boolean) =>
+      this.setPluginDisabled(pluginPath, disabled)
+    )
     ipcMain.handle('import-plugin', () => this.importPlugin())
     ipcMain.handle('import-dev-plugin', (_event, pluginJsonPath?: string) =>
       this.importDevPlugin(pluginJsonPath)
@@ -221,6 +227,9 @@ export class PluginsAPI {
       'query-main-push',
       async (_event, pluginPath: string, featureCode: string, queryData: any) => {
         try {
+          if (this.isPluginDisabled(pluginPath)) {
+            return []
+          }
           return await this.pluginManager?.queryMainPush(pluginPath, featureCode, queryData)
         } catch (error: unknown) {
           console.error('[Plugins] mainPush 查询失败:', error)
@@ -234,6 +243,9 @@ export class PluginsAPI {
       'select-main-push',
       async (_event, pluginPath: string, featureCode: string, selectData: any) => {
         try {
+          if (this.isPluginDisabled(pluginPath)) {
+            return false
+          }
           return await this.pluginManager?.selectMainPush(pluginPath, featureCode, selectData)
         } catch (error: unknown) {
           console.error('[Plugins] mainPush 选择失败:', error)
@@ -246,6 +258,9 @@ export class PluginsAPI {
       'call-headless-plugin',
       async (_event, pluginPath: string, featureCode: string, action: any) => {
         try {
+          if (this.isPluginDisabled(pluginPath)) {
+            return { success: false, error: '插件已禁用' }
+          }
           const result = await this.pluginManager?.callHeadlessPluginMethod(
             pluginPath,
             featureCode,
@@ -283,6 +298,77 @@ export class PluginsAPI {
     const allPlugins = await this.getAllPlugins()
     // 过滤掉所有内置插件（system、setting 等）
     return allPlugins.filter((plugin: any) => !isBundledInternalPlugin(plugin.name))
+  }
+
+  public getDisabledPlugins(): string[] {
+    if (this.disabledPluginPathSet) {
+      return [...this.disabledPluginPathSet]
+    }
+
+    const data = databaseAPI.dbGet(DISABLED_PLUGINS_KEY)
+    const disabledPlugins = Array.isArray(data)
+      ? data.filter((item): item is string => typeof item === 'string')
+      : []
+
+    this.disabledPluginPathSet = new Set(disabledPlugins)
+    return disabledPlugins
+  }
+
+  public getDisabledPluginSet(): Set<string> {
+    if (!this.disabledPluginPathSet) {
+      this.getDisabledPlugins()
+    }
+    // getDisabledPlugins() 确保 disabledPluginPathSet 被初始化
+    return this.disabledPluginPathSet!
+  }
+
+  public isPluginDisabled(pluginPath: string): boolean {
+    return this.getDisabledPluginSet().has(pluginPath)
+  }
+
+  public async setPluginDisabled(
+    pluginPath: string,
+    disabled: boolean
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const plugins = databaseAPI.dbGet('plugins')
+      if (!Array.isArray(plugins)) {
+        return { success: false, error: '插件列表不存在' }
+      }
+
+      const plugin = plugins.find((item: any) => item.path === pluginPath)
+      if (!plugin) {
+        return { success: false, error: '插件不存在' }
+      }
+      if (isBundledInternalPlugin(plugin.name)) {
+        return { success: false, error: '内置插件不能禁用' }
+      }
+
+      const disabledPlugins = this.getDisabledPluginSet()
+      const isCurrentlyDisabled = disabledPlugins.has(pluginPath)
+      if (isCurrentlyDisabled === disabled) {
+        return { success: true }
+      }
+
+      if (disabled) {
+        disabledPlugins.add(pluginPath)
+      } else {
+        disabledPlugins.delete(pluginPath)
+      }
+      this.disabledPluginPathSet = disabledPlugins
+      databaseAPI.dbPut(DISABLED_PLUGINS_KEY, [...disabledPlugins])
+
+      if (disabled && this.pluginManager) {
+        this.pluginManager.killPlugin(pluginPath)
+      }
+
+      this.mainWindow?.webContents.send('plugins-changed')
+      this.mainWindow?.webContents.send('super-panel-pinned-changed')
+      return { success: true }
+    } catch (error: unknown) {
+      console.error('[Plugins] 更新插件禁用状态失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
   }
 
   // 获取所有插件列表（包括 system 插件，用于生成搜索指令）
@@ -1343,6 +1429,7 @@ export class PluginsAPI {
       })
 
       this.notifyPluginsChanged()
+      this.mainWindow?.webContents.send('super-panel-pinned-changed')
       return {
         success: true,
         pluginName: pluginConfig.name,
@@ -1465,6 +1552,14 @@ export class PluginsAPI {
         pluginName: pluginInfo.name,
         source: getPluginSource(pluginInfo.isDevelopment)
       })
+
+      const disabledPlugins = this.getDisabledPluginSet()
+      if (disabledPlugins.delete(pluginPath)) {
+        this.disabledPluginPathSet = disabledPlugins
+        databaseAPI.dbPut(DISABLED_PLUGINS_KEY, [...disabledPlugins])
+      }
+
+      await databaseAPI.clearPluginData(pluginInfo.name)
 
       this.notifyPluginsChanged()
 

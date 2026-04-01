@@ -75,6 +75,11 @@ const searchModeOptions = [
   { label: '列表模式', value: 'list' }
 ]
 
+const tabKeyFunctionOptions = [
+  { label: '切换选中', value: 'navigate' },
+  { label: '目标指令', value: 'target-command' }
+]
+
 const devToolsModeOptions = [
   { label: '独立窗口', value: 'detach' },
   { label: '靠右', value: 'right' },
@@ -130,9 +135,11 @@ const localAppSearch = ref(true)
 const recentRows = ref(2)
 const pinnedRows = ref(2)
 const searchMode = ref<'aggregate' | 'list'>('aggregate')
+const clipboardRetentionDays = ref(180)
 
 // Tab 键目标指令
 const tabTargetCommand = ref('')
+const tabKeyFunction = ref<'navigate' | 'target-command'>('navigate')
 
 // 空格打开指令
 const spaceOpenCommand = ref(false)
@@ -326,7 +333,7 @@ async function handleWindowDefaultHeightChange(): Promise<void> {
       windowDefaultHeight.value = 541
     }
     await saveSettings()
-    // 通知主进程更新窗口默认高度
+    // 通知主进程更新
     await window.ztools.internal.setWindowDefaultHeight(windowDefaultHeight.value)
     console.log('插件默认高度已更新:', windowDefaultHeight.value)
   } catch (error) {
@@ -343,6 +350,33 @@ async function resetWindowDefaultHeight(): Promise<void> {
     console.log('插件默认高度已重置')
   } catch (error) {
     console.error('重置插件默认高度失败:', error)
+  }
+}
+
+// 处理剪贴板历史保存天数变化
+async function handleClipboardRetentionDaysChange(): Promise<void> {
+  try {
+    if (!clipboardRetentionDays.value || clipboardRetentionDays.value < 1) {
+      clipboardRetentionDays.value = 180
+    }
+    await saveSettings()
+    // 通知主进程更新剪贴板配置
+    await window.ztools.internal.updateClipboardConfig({
+      retentionDays: clipboardRetentionDays.value
+    })
+    console.log('剪贴板历史保存天数已更新:', clipboardRetentionDays.value)
+  } catch (error) {
+    console.error('保存剪贴板历史保存天数失败:', error)
+  }
+}
+
+// 重置剪贴板历史保存天数
+async function resetClipboardRetentionDays(): Promise<void> {
+  try {
+    clipboardRetentionDays.value = 180
+    await handleClipboardRetentionDaysChange()
+  } catch (error) {
+    console.error('重置剪贴板历史保存天数失败:', error)
   }
 }
 
@@ -547,6 +581,17 @@ async function handleTabTargetChange(): Promise<void> {
     console.log('Tab 键目标指令已更新:', tabTargetCommand.value)
   } catch (error) {
     console.error('保存 Tab 键目标指令失败:', error)
+  }
+}
+
+// 处理 Tab 键功能变化
+async function handleTabKeyFunctionChange(): Promise<void> {
+  try {
+    await saveSettings()
+    await window.ztools.internal.updateTabKeyFunction(tabKeyFunction.value)
+    console.log('Tab 键功能已更新:', tabKeyFunction.value)
+  } catch (error) {
+    console.error('保存 Tab 键功能失败:', error)
   }
 }
 
@@ -1042,6 +1087,8 @@ async function loadSettings(): Promise<void> {
       primaryColor.value = data.primaryColor ?? 'blue'
       searchMode.value = data.searchMode ?? 'aggregate'
       autoCheckUpdate.value = data.autoCheckUpdate ?? true
+      tabKeyFunction.value =
+        data.tabKeyFunction ?? (data.tabTargetCommand ? 'target-command' : 'navigate')
       // Tab 键目标指令
       tabTargetCommand.value = data.tabTargetCommand ?? ''
       // 空格打开指令
@@ -1124,6 +1171,7 @@ async function saveSettings(): Promise<void> {
       recentRows: recentRows.value,
       pinnedRows: pinnedRows.value,
       searchMode: searchMode.value,
+      tabKeyFunction: tabKeyFunction.value,
       tabTargetCommand: tabTargetCommand.value,
       spaceOpenCommand: spaceOpenCommand.value,
       floatingBallDoubleClickCommand: floatingBallDoubleClickCommand.value,
@@ -1146,7 +1194,8 @@ async function saveSettings(): Promise<void> {
       proxyUrl: proxyUrl.value,
       pluginMarketCustom: pluginMarketCustom.value,
       pluginMarketUrl: pluginMarketUrl.value,
-      autoCheckUpdate: autoCheckUpdate.value
+      autoCheckUpdate: autoCheckUpdate.value,
+      clipboardRetentionDays: clipboardRetentionDays.value
     })
   } catch (error) {
     console.error('保存设置失败:', error)
@@ -1555,6 +1604,22 @@ onUnmounted(() => {
 
       <div class="setting-item tab-target-setting-item">
         <div class="setting-label">
+          <span>Tab 功能</span>
+          <span class="setting-desc">设置 Tab 键用于切换选中项，或直接进入指定指令</span>
+        </div>
+        <div class="setting-control-column">
+          <div class="setting-control">
+            <Dropdown
+              v-model="tabKeyFunction"
+              :options="tabKeyFunctionOptions"
+              @change="handleTabKeyFunctionChange"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div v-if="tabKeyFunction === 'target-command'" class="setting-item tab-target-setting-item">
+        <div class="setting-label">
           <span>Tab 键目标指令</span>
           <span class="setting-desc"
             >配置后在搜索框输入文字按 Tab 键可直接进入对应指令，常用于快速打开 AI 对话等场景</span
@@ -1671,6 +1736,47 @@ onUnmounted(() => {
             class="btn btn-icon"
             title="重置"
             @click="resetWindowDefaultHeight"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="1 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M14.5 9C14.5 11.4853 12.4853 13.5 10 13.5C7.51472 13.5 5.5 11.4853 5.5 9C5.5 6.51472 7.51472 4.5 10 4.5C11.6569 4.5 13.0943 5.41421 13.8536 6.75M14 4V7H11"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-label">
+          <span>剪贴板历史保存天数</span>
+          <span class="setting-desc">剪贴板历史记录的保留时长（天）</span>
+        </div>
+        <div class="setting-control">
+          <input
+            v-model.number="clipboardRetentionDays"
+            type="number"
+            class="input"
+            placeholder="180"
+            min="1"
+            max="3650"
+            @blur="handleClipboardRetentionDaysChange"
+            @keyup.enter="handleClipboardRetentionDaysChange"
+          />
+          <button
+            v-if="clipboardRetentionDays !== 180"
+            class="btn btn-icon"
+            title="重置"
+            @click="resetClipboardRetentionDays"
           >
             <svg
               width="20"

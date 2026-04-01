@@ -29,6 +29,26 @@ import pluginManager from './pluginManager'
 type WindowMaterial = 'mica' | 'acrylic' | 'none'
 
 /**
+ * 应用快捷键触发时携带的文件输入
+ */
+interface AppShortcutInputFile {
+  path: string
+  name: string
+  isDirectory: boolean
+  isFile?: boolean
+}
+
+/**
+ * 应用快捷键触发时携带的当前输入上下文
+ */
+interface AppShortcutLaunchContext {
+  searchQuery: string
+  pastedImage: string | null
+  pastedFiles: AppShortcutInputFile[] | null
+  pastedText: string | null
+}
+
+/**
  * 窗口管理器
  * 负责主窗口的创建、显示/隐藏、快捷键注册等
  */
@@ -60,6 +80,13 @@ class WindowManager {
   private suppressBlurHide: boolean = false // 临时抑制 blur 事件隐藏窗口（文件关联打开等场景）
   private lastBlurHideTime: number = 0 // blur 导致隐藏窗口的时间戳（用于解决托盘点击竞态）
   private appShortcuts: Map<string, string> = new Map() // 应用快捷键映射表 (快捷键 -> 目标指令)
+  // 应用快捷键触发时携带的当前输入上下文
+  private appShortcutLaunchContext: AppShortcutLaunchContext = {
+    searchQuery: '',
+    pastedImage: null,
+    pastedFiles: null,
+    pastedText: null
+  }
 
   /**
    * 更新焦点目标（供外部调用,如 pluginManager）
@@ -148,6 +175,14 @@ class WindowManager {
     }
 
     this.mainWindow = new BrowserWindow(windowConfig)
+
+    // 强化置顶层级并允许在所有桌面和全屏应用上显示
+    this.mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    if (platform.isMacOS) {
+      this.mainWindow.setAlwaysOnTop(true, 'modal-panel', 1)
+    } else {
+      this.mainWindow.setAlwaysOnTop(true)
+    }
 
     // Windows 11 根据用户配置设置背景材质
     if (platform.isWindows) {
@@ -444,10 +479,6 @@ class WindowManager {
     return ret
   }
 
-  public refreshPreviousActiveWindow(): void {
-    this.previousActiveWindow = clipboardManager.getCurrentWindow()
-  }
-
   public setPreviousActiveWindow(
     windowInfo: {
       app: string
@@ -516,8 +547,9 @@ class WindowManager {
     // 1. 显示窗口
     this.mainWindow.show()
 
-    // 2. macOS特殊处理：激活应用
+    // 2. macOS特殊处理：重申置顶，防止因为系统事件掉层级
     if (platform.isMacOS) {
+      this.mainWindow.setAlwaysOnTop(true, 'modal-panel', 1)
       return
     }
 
@@ -526,13 +558,6 @@ class WindowManager {
 
     // 4. 聚焦窗口
     this.mainWindow.focus()
-
-    // 5. 短暂延迟后恢复正常层级（避免一直置顶）
-    setTimeout(() => {
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.setAlwaysOnTop(false)
-      }
-    }, 100)
   }
 
   /**
@@ -1109,9 +1134,21 @@ class WindowManager {
   private async handleAppShortcut(target: string): Promise<void> {
     try {
       // 调用 API 管理器的全局快捷键处理方法
-      await api.handleGlobalShortcutTrigger(target)
+      await api.handleGlobalShortcutTrigger(target, this.appShortcutLaunchContext)
     } catch (error) {
       console.error('[Window] 处理应用快捷键失败:', error)
+    }
+  }
+
+  /**
+   * 更新应用快捷键触发时要带给启动链路的输入上下文
+   */
+  public updateAppShortcutLaunchContext(context: Partial<AppShortcutLaunchContext>): void {
+    this.appShortcutLaunchContext = {
+      searchQuery: context.searchQuery ?? '',
+      pastedImage: context.pastedImage ?? null,
+      pastedFiles: context.pastedFiles ?? null,
+      pastedText: context.pastedText ?? null
     }
   }
 

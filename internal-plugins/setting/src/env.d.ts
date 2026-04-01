@@ -48,6 +48,11 @@ declare global {
             isDevelopment?: boolean
           }>
         >
+        getDisabledPlugins: () => Promise<string[]>
+        setPluginDisabled: (
+          pluginPath: string,
+          disabled: boolean
+        ) => Promise<{ success: boolean; error?: string }>
         getAllPlugins: () => Promise<
           Array<{
             name: string
@@ -249,7 +254,9 @@ declare global {
         updateLocalAppSearch: (enabled: boolean) => Promise<void>
         updateRecentRows: (rows: number) => Promise<void>
         updatePinnedRows: (rows: number) => Promise<void>
+        updateClipboardConfig: (config: { retentionDays: number }) => Promise<void>
         updateSearchMode: (searchMode: 'aggregate' | 'list') => Promise<void>
+        updateTabKeyFunction: (mode: 'navigate' | 'target-command') => Promise<void>
         updateTabTarget: (target: string) => Promise<void>
         updateSpaceOpenCommand: (enabled: boolean) => Promise<void>
         updateFloatingBallDoubleClickCommand: (command: string) => Promise<void>

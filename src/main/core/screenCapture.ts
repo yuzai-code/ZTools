@@ -48,7 +48,8 @@ export const handleScreenShots = (
 }
 
 export const screenCapture = (
-  mainWindow?: BrowserWindow
+  mainWindow?: BrowserWindow,
+  restoreShowWindow: boolean = true
 ): Promise<{ image: string; bounds?: { x: number; y: number; width: number; height: number } }> => {
   return new Promise((resolve) => {
     // 隐藏主窗口
@@ -59,7 +60,7 @@ export const screenCapture = (
 
     // 恢复窗口显示
     const restoreWindow = (): void => {
-      if (mainWindow && wasVisible) {
+      if (mainWindow && wasVisible && restoreShowWindow) {
         windowManager.showWindow()
       }
     }
