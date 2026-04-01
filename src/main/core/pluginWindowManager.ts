@@ -289,9 +289,10 @@ class PluginWindowManager {
       console.debug(`[pluginWindow:callback] dom-ready → trigger parent callback, winId=${win.id}`)
     })
 
-    win.webContents.on('render-process-gone', () => {
-      console.info(
-        `[pluginWindow:render-process-gone] winId=${win.id} unregistered from plugin=${pluginName}`
+    win.webContents.on('render-process-gone', (_event, details) => {
+      if (win.isDestroyed()) return
+      console.warn(
+        `[pluginWindow:render-process-gone] winId=${win.id} plugin=${pluginName} reason=${details.reason} exitCode=${details.exitCode}`
       )
       win.destroy()
     })
