@@ -37,11 +37,17 @@ export class WindowAPI {
         const [, height] = this.mainWindow.getSize()
         this.lockedSize = { width: WINDOW_WIDTH, height }
       } else {
-        // 解锁：验证并恢复尺寸
+        // 解锁：验证并恢复尺寸（用 setBounds 保留位置，避免 Windows 下 x 轴偏移）
         if (this.lockedSize) {
+          const [currentX, currentY] = this.mainWindow.getPosition()
           const [, height] = this.mainWindow.getSize()
           if (WINDOW_WIDTH !== this.lockedSize.width || height !== this.lockedSize.height) {
-            this.mainWindow.setSize(this.lockedSize.width, this.lockedSize.height)
+            this.mainWindow.setBounds({
+              x: currentX,
+              y: currentY,
+              width: this.lockedSize.width,
+              height: this.lockedSize.height
+            })
           }
           this.lockedSize = null
         }
@@ -90,9 +96,13 @@ export class WindowAPI {
       const maxHeight = display.workAreaSize.height
       const newHeight = Math.max(WINDOW_INITIAL_HEIGHT, Math.min(height, maxHeight))
 
+      // 保留当前 x/y 位置：Windows 下 setSize 会导致窗口向左偏移（DPI 缩放/阴影帧影响）
+      const [currentX, currentY] = this.mainWindow.getPosition()
+
       // 临时启用 resizable 以允许代码调整大小
       this.mainWindow.setResizable(true)
-      this.mainWindow.setSize(width, newHeight)
+      // 使用 setBounds 代替 setSize，确保只改高度不改位置
+      this.mainWindow.setBounds({ x: currentX, y: currentY, width, height: newHeight })
       // 立即禁用 resizable，防止用户手动调整
       this.mainWindow.setResizable(false)
 
