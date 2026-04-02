@@ -377,3 +377,65 @@ export default new NewAPI()
 - 原生模块：macOS `resources/lib/mac/ztools_native.node`，Windows `resources/lib/win/ztools_native.node`
 - 插件数据自动隔离，删除插件时自动清理历史和固定列表
 - 新的插件 API 优先使用 `registerPluginApiServices` 注册到统一分发器
+
+## 安全配置
+
+### 窗口安全配置
+
+所有窗口和视图都遵循 Electron 安全最佳实践：
+
+```typescript
+// 标准安全配置（src/main/common/secureWebPreferences.ts）
+const SECURE_WEB_PREFERENCES = {
+  contextIsolation: true, // 启用上下文隔离
+  nodeIntegration: false, // 禁用 Node.js 集成
+  webSecurity: true, // 启用 Web 安全策略
+  allowRunningInsecureContent: false, // 禁止 HTTPS 页面加载 HTTP 资源
+  sandbox: true // 启用沙箱（插件视图）
+}
+```
+
+### 敏感数据加密
+
+敏感数据（API Keys、密码等）使用 Electron 的 `safeStorage` API 加密存储：
+
+```typescript
+// src/main/utils/sensitiveDataEncryption.ts
+import { encryptSensitiveData, decryptSensitiveData } from '../utils/sensitiveDataEncryption'
+
+// 加密存储
+const encrypted = encryptSensitiveData(apiKey)
+
+// 解密读取
+const decrypted = decryptSensitiveData(encrypted)
+```
+
+### 插件权限系统
+
+插件需要在 `plugin.json` 中声明所需权限：
+
+```json
+{
+  "name": "my-plugin",
+  "permissions": [
+    "shell:open-path", // 打开文件/URL
+    "clipboard:read", // 读取剪贴板
+    "clipboard:write", // 写入剪贴板
+    "input:simulate", // 模拟输入
+    "file:read", // 读取文件
+    "http:request" // HTTP 请求
+  ]
+}
+```
+
+权限类型定义见 `src/main/types/pluginPermissions.ts`。
+
+### 网络服务安全
+
+- MCP Server 和 HTTP Server 仅绑定 `127.0.0.1`
+- CORS 配置收紧为本地来源
+- API Key 通过请求头验证
+
+### 开发模式安全警告
+
+开发模式下，`validateWindowSecurity()` 函数会检测不安全配置并输出警告。

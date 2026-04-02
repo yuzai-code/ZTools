@@ -157,10 +157,10 @@ class WindowManager {
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         backgroundThrottling: false, // 窗口最小化时是否继续动画和定时器
-        contextIsolation: true, // 禁用上下文隔离, 渲染进程和preload共用window对象
+        contextIsolation: true, // 启用上下文隔离
         nodeIntegration: false, // 渲染进程禁止直接使用 Node
         spellcheck: false, // 禁用拼写检查
-        webSecurity: false
+        webSecurity: true
       }
     }
 

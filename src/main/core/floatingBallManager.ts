@@ -177,6 +177,9 @@ class FloatingBallManager {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        webSecurity: true,
+        sandbox: false, // preload 使用了 fs/path 等 Node.js API
+        allowRunningInsecureContent: false,
         preload: floatingBallPreload
       }
     })

@@ -42,6 +42,7 @@ import pluginWindowAPI from './plugin/window'
 import { setupImageAnalysisAPI } from './shared/imageAnalysis'
 import zbrowserAPI from './plugin/zbrowser'
 import pluginFFmpegAPI from './plugin/ffmpeg'
+import pluginSharpAPI from './plugin/sharp'
 
 import httpServer from '../core/httpServer'
 import mcpServer from '../core/mcpServer'
@@ -119,6 +120,7 @@ class APIManager {
     pluginHttpAPI.init(pluginManager)
     pluginToastAPI.init(pluginManager)
     pluginFFmpegAPI.init()
+    pluginSharpAPI.init()
 
     // 初始化 zbrowser 浏览器自动化 API
     zbrowserAPI.init(mainWindow, pluginManager)

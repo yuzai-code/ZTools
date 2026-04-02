@@ -348,7 +348,7 @@ class SuperPanelManager {
         contextIsolation: true,
         nodeIntegration: false,
         spellcheck: false,
-        webSecurity: false
+        webSecurity: true
       }
     }
 

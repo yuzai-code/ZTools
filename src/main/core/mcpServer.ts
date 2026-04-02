@@ -3,7 +3,11 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'http'
 import { randomBytes } from 'crypto'
 import pluginToolsAPI from '../api/plugin/tools'
 import databaseAPI from '../api/shared/database'
-import { encryptSensitiveData, decryptSensitiveData } from '../utils/sensitiveDataEncryption'
+import {
+  encryptSensitiveData,
+  decryptSensitiveData,
+  migrateData
+} from '../utils/sensitiveDataEncryption'
 
 /**
  * MCP 服务持久化配置。
@@ -82,6 +86,13 @@ class McpServer {
    */
   public async loadConfig(): Promise<McpServerConfig> {
     try {
+      // Migrate any plaintext apiKey to encrypted format
+      await migrateData<McpServerConfig>(
+        () => databaseAPI.dbGet(DB_KEY) as McpServerConfig | null,
+        (data) => databaseAPI.dbPut(DB_KEY, data),
+        'MCPServer'
+      )
+
       const saved = databaseAPI.dbGet(DB_KEY)
       if (saved) {
         this.config = {

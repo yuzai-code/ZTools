@@ -2,7 +2,11 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'http'
 import { randomBytes } from 'crypto'
 import windowManager from '../managers/windowManager'
 import databaseAPI from '../api/shared/database'
-import { encryptSensitiveData, decryptSensitiveData } from '../utils/sensitiveDataEncryption'
+import {
+  encryptSensitiveData,
+  decryptSensitiveData,
+  migrateData
+} from '../utils/sensitiveDataEncryption'
 
 interface HttpServerConfig {
   enabled: boolean
@@ -36,6 +40,13 @@ class HttpServer {
 
   public async loadConfig(): Promise<HttpServerConfig> {
     try {
+      // Migrate any plaintext apiKey to encrypted format
+      await migrateData<HttpServerConfig>(
+        () => databaseAPI.dbGet(DB_KEY) as HttpServerConfig | null,
+        (data) => databaseAPI.dbPut(DB_KEY, data),
+        'HTTPServer'
+      )
+
       const saved = databaseAPI.dbGet(DB_KEY)
       if (saved) {
         this.config = {

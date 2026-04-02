@@ -1,6 +1,6 @@
 import { BrowserWindow, BrowserWindowConstructorOptions, session } from 'electron'
 import path from 'path'
-import mainPreload from '../../../resources/preload.js?asset'
+import mainPreload from '../../../resources/preload-bridge.js?asset'
 import proxyManager from '../managers/proxyManager'
 import { GLOBAL_SCROLLBAR_CSS } from './globalStyles'
 
@@ -236,10 +236,10 @@ class PluginWindowManager {
         ...options.webPreferences,
         preload: preloadPath,
         session: sess,
-        contextIsolation: false,
+        contextIsolation: true, // ✅ preload-bridge.js 使用 contextBridge
         nodeIntegration: false,
-        webSecurity: false,
-        sandbox: false
+        webSecurity: true,
+        sandbox: true // ✅ preload-bridge.js 不使用 Node.js API
       }
     })
 

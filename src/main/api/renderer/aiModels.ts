@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron'
 import databaseAPI from '../shared/database'
-import { encryptSensitiveData, decryptSensitiveData } from '../../utils/sensitiveDataEncryption'
+import {
+  encryptSensitiveData,
+  decryptSensitiveData,
+  migrateData
+} from '../../utils/sensitiveDataEncryption'
 
 /**
  * AI 模型数据结构
@@ -94,6 +98,13 @@ class AiModelsAPI {
    */
   public getAllModels(): AiModel[] {
     try {
+      // Migrate any plaintext apiKeys to encrypted format
+      migrateData<AiModel[]>(
+        () => databaseAPI.dbGet(this.DB_KEY) as AiModel[] | null,
+        (data) => databaseAPI.dbPut(this.DB_KEY, data),
+        'AIModels'
+      )
+
       const data = databaseAPI.dbGet(this.DB_KEY)
       if (data && Array.isArray(data)) {
         // Decrypt apiKey for each model

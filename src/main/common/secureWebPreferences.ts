@@ -2,7 +2,50 @@
  * 安全的 WebPreferences 配置常量
  * 遵循 Electron 安全最佳实践
  */
-import type { WebPreferences } from 'electron'
+import { app, type WebPreferences } from 'electron'
+
+/**
+ * 安全配置项及其预期值
+ */
+const SECURITY_CHECKS: Array<{
+  key: keyof WebPreferences
+  expectedValue: boolean
+  description: string
+}> = [
+  { key: 'contextIsolation', expectedValue: true, description: '上下文隔离' },
+  { key: 'nodeIntegration', expectedValue: false, description: 'Node.js 集成' },
+  { key: 'webSecurity', expectedValue: true, description: 'Web 安全策略' }
+]
+
+/**
+ * 验证窗口的 WebPreferences 安全配置
+ * 在开发模式下检测到不安全配置时会输出警告
+ * @param prefs WebPreferences 配置对象
+ * @param windowName 窗口名称（用于日志输出）
+ */
+export function validateWindowSecurity(prefs: WebPreferences, windowName?: string): void {
+  // 仅在开发模式下输出警告
+  if (app.isPackaged) {
+    return
+  }
+
+  const insecureConfigs: string[] = []
+
+  for (const check of SECURITY_CHECKS) {
+    const actualValue = prefs[check.key]
+    if (actualValue !== undefined && actualValue !== check.expectedValue) {
+      insecureConfigs.push(
+        `  - ${check.description} (${check.key}): 当前值=${actualValue}, 期望值=${check.expectedValue}`
+      )
+    }
+  }
+
+  if (insecureConfigs.length > 0) {
+    const prefix = windowName ? `[${windowName}]` : '[WindowSecurity]'
+    console.warn(`${prefix} 检测到不安全的 WebPreferences 配置:`)
+    insecureConfigs.forEach((config) => console.warn(config))
+  }
+}
 
 /**
  * 标准安全配置 - 适用于大多数窗口

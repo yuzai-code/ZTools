@@ -55,8 +55,11 @@ class ToastManager {
       focusable: false,
       show: false,
       webPreferences: {
-        nodeIntegration: false,
         contextIsolation: true,
+        nodeIntegration: false,
+        webSecurity: true,
+        sandbox: true, // toastPreload 只使用 electron API，支持 sandbox
+        allowRunningInsecureContent: false,
         preload: toastPreload
       }
     })

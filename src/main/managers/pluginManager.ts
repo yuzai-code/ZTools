@@ -4,7 +4,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import hideWindowHtml from '../../../resources/hideWindow.html?asset'
 
-import mainPreload from '../../../resources/preload.js?asset'
+import mainPreload from '../../../resources/preload-bridge.js?asset'
 import api from '../api'
 import { WINDOW_INITIAL_HEIGHT, WINDOW_DEFAULT_HEIGHT, WINDOW_WIDTH } from '../common/constants'
 import detachedWindowManager, { DETACHED_TITLEBAR_HEIGHT } from '../core/detachedWindowManager'
@@ -62,6 +62,7 @@ interface PluginViewInfo {
   isDevelopment?: boolean
   backgroundRunning?: boolean // plugin.json pluginSetting.backgroundRunning，后台不节流
   single?: boolean // plugin.json pluginSetting.single, true/默认 = 单例不可多开, false = 允许多开
+  permissions?: string[] // 插件声明的权限列表
 }
 
 interface PluginLastEnterState {
@@ -202,11 +203,11 @@ export class PluginManager {
     const view = new WebContentsView({
       webPreferences: {
         backgroundThrottling: false,
-        contextIsolation: false,
+        contextIsolation: true, // ✅ preload-bridge.js 使用 contextBridge
         nodeIntegration: false,
-        webSecurity: false,
-        sandbox: false,
-        allowRunningInsecureContent: true,
+        webSecurity: true,
+        sandbox: true, // ✅ preload-bridge.js 不使用 Node.js API
+        allowRunningInsecureContent: false,
         webviewTag: true,
         preload: preloadPath,
         session: sess,
@@ -605,7 +606,8 @@ export class PluginManager {
         logo: logoUrl,
         isDevelopment,
         backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning,
-        single: pluginConfig.pluginSetting?.single
+        single: pluginConfig.pluginSetting?.single,
+        permissions: pluginConfig.permissions || []
       }
       this.pluginViews.push(pluginInfo)
       this.currentPluginPath = pluginPath
@@ -904,7 +906,8 @@ export class PluginManager {
         logo: logoUrl,
         isDevelopment,
         backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning,
-        single: pluginConfig.pluginSetting?.single
+        single: pluginConfig.pluginSetting?.single,
+        permissions: pluginConfig.permissions || []
       }
       this.pluginViews.push(pluginInfo)
 

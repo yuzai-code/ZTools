@@ -16,3 +16,6 @@ out
 /.shared
 .pnpm-store/*
 _*
+
+# Git worktrees
+.worktrees/
