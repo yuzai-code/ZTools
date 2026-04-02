@@ -8,8 +8,8 @@
 
 _uTools 的开源实现 | 支持 macOS 和 Windows_
 
-[![GitHub release](https://img.shields.io/github/v/release/lzx8589561/ZTools)](https://github.com/ZToolsCenter/ZTools/releases)
-[![License](https://img.shields.io/github/license/lzx8589561/ZTools)](./LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/ZToolsCenter/ZTools)](https://github.com/ZToolsCenter/ZTools/releases)
+[![License](https://img.shields.io/github/license/ZToolsCenter/ZTools)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)](https://github.com/ZToolsCenter/ZTools)
 
 [English](./README_EN.md) | 简体中文
@@ -26,9 +26,16 @@ _uTools 的开源实现 | 支持 macOS 和 Windows_
 - 🎨 **主题定制** - 系统/亮色/暗色模式，6 种主题色可选
 - ⚡ **高性能** - LMDB 数据库、WebContentsView 架构、极速响应
 - 🌍 **跨平台** - 原生支持 macOS 和 Windows，统一体验
-- 🔒 **数据隔离** - 插件数据独立存储，安全可靠
+- 🔒 **数据隔离** - 插件数据独立存储，敏感数据加密
+- 🤖 **AI 集成** - 内置 AI 对话 API（OpenAI 兼容格式），插件可直接调用
+- 🔗 **MCP Server** - 标准 MCP 协议，将插件工具暴露给 AI 客户端
+- 🖱️ **超级面板** - 鼠标中键/长按右键触发，智能识别剪贴板内容
+- 🌐 **浏览器自动化** - ZBrowser 内置浏览器引擎，插件可自动化操作网页
+- ☁️ **WebDAV 同步** - 支持通过 WebDAV 跨设备同步数据
+- 🔍 **网页快开** - 自定义搜索引擎，快速打开网页
+- 🌏 **离线翻译** - 基于 Bergamot WASM 的离线翻译引擎
 - 🛠️ **开发友好** - 完整的 TypeScript 类型支持，热重载开发
-- ⚙️ **最新技术栈** - Electron 38.5 + Node 22.20 + Chrome 140
+- ⚙️ **最新技术栈** - Electron 38 + Vue 3 + TypeScript + LMDB
 
 ## 📸 预览
 
@@ -262,19 +269,19 @@ ZTools 提供丰富的 API：
 ztools/
 ├── src/
 │   ├── main/              # 主进程
-│   │   ├── api/          # IPC API 模块
-│   │   ├── core/         # 核心功能（数据库、原生模块）
-│   │   ├── windowManager.ts
-│   │   └── pluginManager.ts
-│   ├── preload/          # Preload 脚本
-│   └── renderer/         # 渲染进程（Vue）
-│       ├── components/
-│       ├── stores/       # Pinia 状态管理
-│       └── App.vue
-├── resources/            # 资源文件
-│   ├── lib/             # 原生模块（.node）
-│   └── preload.js       # 插件 Preload
-└── CLAUDE.md            # 完整技术文档
+│   │   ├── api/           # IPC API 模块（renderer/plugin/shared）
+│   │   ├── core/          # 核心功能（LMDB、同步、翻译、MCP、ZBrowser）
+│   │   └── managers/      # 管理器（窗口、插件、剪贴板、代理）
+│   ├── preload/           # 主程序 Preload 脚本
+│   └── renderer/          # 渲染进程（Vue 3 + Pinia）
+│       ├── components/    # 搜索框、超级面板、更新窗口等
+│       ├── stores/        # Pinia 状态管理
+│       └── composables/   # 组合式函数
+├── internal-plugins/      # 内置插件（设置、系统工具）
+├── resources/             # 资源文件
+│   ├── lib/               # 原生模块（.node）
+│   └── preload.js         # 插件 Preload
+└── ztools-api-types/      # 插件 API 类型定义（子模块）
 ```
 
 ## 📚 文档
@@ -287,8 +294,8 @@ ztools/
 
 ### 环境要求
 
-- Node.js >= 18
-- npm >= 9
+- Node.js >= 20
+- pnpm >= 9
 - macOS 或 Windows 开发环境
 
 ### 代码拉取
@@ -344,14 +351,21 @@ pnpm build:unpack       # 打包但不生成安装包（调试用）
 - [x] 跨平台支持（macOS + Windows）
 - [x] LMDB 数据库迁移
 - [x] 主题定制
-- [x] 数据隔离
+- [x] 数据隔离与敏感数据加密
 - [x] 插件市场
 - [x] 全局快捷键自定义
 - [x] 插件分离为独立窗口
+- [x] WebDAV 云同步
+- [x] MCP Server（插件工具暴露给 AI）
+- [x] AI 对话集成（OpenAI 兼容）
+- [x] 超级面板
+- [x] ZBrowser 浏览器自动化
+- [x] 离线翻译
+- [x] 悬浮球
+- [x] 网页快开
+- [x] HTTP API 服务
 - [ ] 插件自动更新
-- [ ] 云同步（可选）
 - [ ] Linux 支持
-- [ ] MCP工具集
 
 ## 🐛 问题反馈
 
@@ -385,7 +399,7 @@ pnpm build:unpack       # 打包但不生成安装包（调试用）
 
 ## ⭐ Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=lzx8589561/ZTools&type=Date)](https://star-history.com/#lzx8589561/ZTools&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=ZToolsCenter/ZTools&type=Date)](https://star-history.com/#ZToolsCenter/ZTools&Date)
 
 ---
 
