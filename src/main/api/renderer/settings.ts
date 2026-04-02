@@ -74,9 +74,6 @@ export class SettingsAPI {
           const success = updateShortcut(data.hotkey)
           console.log('[Settings] 启动时应用快捷键设置:', data.hotkey, success ? '成功' : '失败')
         }
-        // 应用托盘图标显示设置（默认显示）
-        windowManager.setTrayIconVisible(data.showTrayIcon ?? true)
-        console.log('[Settings] 启动时应用托盘图标显示设置:', data.showTrayIcon ?? true)
         // 应用主题设置
         if (data.theme) {
           this.setTheme(data.theme)
@@ -106,6 +103,11 @@ export class SettingsAPI {
           console.log('[Settings] 启动时应用插件默认高度设置:', data.windowDefaultHeight)
         }
       }
+
+      // 托盘图标：无论 settings 是否存在，都确保创建（默认显示）
+      const showTray = data?.showTrayIcon ?? true
+      windowManager.setTrayIconVisible(showTray)
+      console.log('[Settings] 启动时应用托盘图标显示设置:', showTray)
 
       // 窗口位置现在由 windowManager.moveWindowToCursor() 处理
       // 每个显示器会自动恢复该显示器上次保存的位置
