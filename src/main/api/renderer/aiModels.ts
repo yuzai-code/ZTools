@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import databaseAPI from '../shared/database'
+import { encryptSensitiveData, decryptSensitiveData } from '../../utils/sensitiveDataEncryption'
 
 /**
  * AI 模型数据结构
@@ -95,7 +96,11 @@ class AiModelsAPI {
     try {
       const data = databaseAPI.dbGet(this.DB_KEY)
       if (data && Array.isArray(data)) {
-        return data
+        // Decrypt apiKey for each model
+        return data.map((model: AiModel) => ({
+          ...model,
+          apiKey: model.apiKey ? decryptSensitiveData(model.apiKey) : ''
+        }))
       }
       return []
     } catch {
@@ -113,6 +118,12 @@ class AiModelsAPI {
       return { success: false, error: '模型ID、名称、API地址和密钥不能为空' }
     }
 
+    // Encrypt apiKey before storing
+    const encryptedModel = {
+      ...model,
+      apiKey: encryptSensitiveData(model.apiKey)
+    }
+
     const models = this.getAllModels()
 
     // 检查是否已存在相同 ID 的模型
@@ -120,8 +131,8 @@ class AiModelsAPI {
       return { success: false, error: '该模型ID已存在' }
     }
 
-    // 添加新模型
-    models.push(model)
+    // 添加新模型（使用加密后的数据）
+    models.push(encryptedModel)
 
     // 保存到数据库（databaseAPI 会自动处理 _rev）
     databaseAPI.dbPut(this.DB_KEY, models)
@@ -138,6 +149,12 @@ class AiModelsAPI {
       return { success: false, error: '模型ID、名称、API地址和密钥不能为空' }
     }
 
+    // Encrypt apiKey before storing
+    const encryptedModel = {
+      ...model,
+      apiKey: encryptSensitiveData(model.apiKey)
+    }
+
     const models = this.getAllModels()
 
     // 查找要更新的模型
@@ -146,8 +163,8 @@ class AiModelsAPI {
       return { success: false, error: '未找到该模型' }
     }
 
-    // 更新模型
-    models[index] = model
+    // 更新模型（使用加密后的数据）
+    models[index] = encryptedModel
 
     // 保存到数据库（databaseAPI 会自动处理 _rev）
     databaseAPI.dbPut(this.DB_KEY, models)

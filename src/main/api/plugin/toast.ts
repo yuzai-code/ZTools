@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, nativeTheme, screen } from 'electron'
 import type { PluginManager } from '../../managers/pluginManager'
+import toastPreload from '../../../../resources/toastPreload.js?asset'
 
 interface ToastOptions {
   message: string
@@ -54,8 +55,9 @@ class ToastManager {
       focusable: false,
       show: false,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: toastPreload
       }
     })
 
@@ -295,8 +297,9 @@ class ToastManager {
         <div id="bottom-container" class="toast-container bottom"></div>
         
         <script>
-          const { ipcRenderer } = require('electron');
-          
+          // 使用 preload 脚本暴露的安全 API
+          // window.toastAPI 由 toastPreload.js 通过 contextBridge 注入
+
           // 生成图标 HTML
           function getIconHTML(type) {
             if (type === 'success') {
@@ -342,7 +345,7 @@ class ToastManager {
           }
           
           // 更新 toast 列表（增量更新）
-          ipcRenderer.on('update-toasts', (event, toasts) => {
+          window.toastAPI.onUpdateToasts((toasts) => {
             const topContainer = document.getElementById('top-container');
             const bottomContainer = document.getElementById('bottom-container');
             
@@ -369,13 +372,20 @@ class ToastManager {
                 const toastEl = document.createElement('div');
                 toastEl.className = \`toast-item \${toast.type}\`;
                 toastEl.id = toast.id;
-                
-                const iconHTML = toast.type !== 'info' ? getIconHTML(toast.type) : '';
-                toastEl.innerHTML = \`
-                  \${iconHTML}
-                  <div class="toast-message">\${escapeHTML(toast.message)}</div>
-                \`;
-                
+
+                // 使用 DOM API 安全插入图标和消息
+                if (toast.type !== 'info') {
+                  const iconContainer = document.createElement('div');
+                  iconContainer.className = 'toast-icon';
+                  iconContainer.innerHTML = getIconHTML(toast.type);
+                  toastEl.appendChild(iconContainer);
+                }
+
+                const messageEl = document.createElement('div');
+                messageEl.className = 'toast-message';
+                messageEl.textContent = toast.message; // 使用 textContent 避免 XSS
+                toastEl.appendChild(messageEl);
+
                 if (toast.position === 'top') {
                   topContainer.appendChild(toastEl);
                 } else {

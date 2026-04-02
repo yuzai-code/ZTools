@@ -1,5 +1,5 @@
-import { exec } from 'child_process'
 import { dialog } from 'electron'
+import { execFileNoThrow } from '../../utils/execFileNoThrow'
 import type { ConfirmDialogOptions } from './types'
 
 export async function launchApp(
@@ -27,15 +27,11 @@ export async function launchApp(
   }
 
   // TODO: 考虑改用 shell.openPath() 以保持与 Windows 实现一致，需要 Mac 环境测试
-  return new Promise((resolve, reject) => {
-    exec(`open "${appPath}"`, (error) => {
-      if (error) {
-        console.error('[Launcher] 启动应用失败:', error)
-        reject(error)
-      } else {
-        console.log(`[Launcher] 成功启动应用: ${appPath}`)
-        resolve()
-      }
-    })
-  })
+  const result = await execFileNoThrow('open', [appPath])
+  if (result.status !== 0) {
+    console.error('[Launcher] 启动应用失败:', result.stderr)
+    throw new Error(result.stderr)
+  } else {
+    console.log(`[Launcher] 成功启动应用: ${appPath}`)
+  }
 }

@@ -143,9 +143,6 @@
       </div>
     </div>
     <script>
-      const { ipcRenderer, webUtils } = require('electron')
-      const path = require('path')
-      const fs = require('fs')
       const ball = document.getElementById('ball')
 
       // ==================== 悬浮球移动（点击 + 拖拽 + 双击） ====================
@@ -177,13 +174,13 @@
           isDragging = true
           ball.classList.remove('pressing')
           ball.classList.add('dragging')
-          ipcRenderer.send('floating-ball-drag-start', {
+          window.floatingBallAPI.send('floating-ball-drag-start', {
             mouseScreenX: e.screenX,
             mouseScreenY: e.screenY
           })
         }
         if (isDragging) {
-          ipcRenderer.send('floating-ball-dragging', {
+          window.floatingBallAPI.send('floating-ball-dragging', {
             screenX: e.screenX,
             screenY: e.screenY
           })
@@ -197,17 +194,17 @@
         ball.classList.remove('dragging')
         if (isDragging) {
           isDragging = false
-          ipcRenderer.send('floating-ball-drag-end')
+          window.floatingBallAPI.send('floating-ball-drag-end')
         } else {
           // 检测双击
           const now = Date.now()
           if (now - lastClickTime < DOUBLE_CLICK_DELAY) {
             // 双击
-            ipcRenderer.send('floating-ball-double-click')
+            window.floatingBallAPI.send('floating-ball-double-click')
             lastClickTime = 0 // 重置时间，避免三击被识别为两次双击
           } else {
             // 单击
-            ipcRenderer.send('floating-ball-click')
+            window.floatingBallAPI.send('floating-ball-click')
             lastClickTime = now
           }
         }
@@ -216,12 +213,12 @@
       // 右键菜单
       ball.addEventListener('contextmenu', (e) => {
         e.preventDefault()
-        ipcRenderer.send('floating-ball-contextmenu')
+        window.floatingBallAPI.send('floating-ball-contextmenu')
       })
 
       // ==================== 接收文字配置 ====================
       const letterEl = document.querySelector('.floating-ball-letter')
-      ipcRenderer.on('floating-ball-set-letter', (_event, letter) => {
+      window.floatingBallAPI.on('floating-ball-set-letter', (letter) => {
         if (letterEl) {
           letterEl.textContent = letter || 'Z'
         }
@@ -251,25 +248,19 @@
         const files = e.dataTransfer && e.dataTransfer.files
         if (!files || files.length === 0) return
 
-        // 收集文件信息（Electron 32+ 必须用 webUtils.getPathForFile 获取路径）
+        // 收集文件信息（通过 preload 暴露的安全 API）
         const fileItems = []
         for (let i = 0; i < files.length; i++) {
-          const filePath = webUtils.getPathForFile(files[i])
+          const filePath = window.floatingBallAPI.getPathForFile(files[i])
           if (!filePath) continue
-          try {
-            const stat = fs.statSync(filePath)
-            fileItems.push({
-              path: filePath,
-              name: path.basename(filePath),
-              isDirectory: stat.isDirectory()
-            })
-          } catch (err) {
-            console.warn('无法读取文件信息:', filePath, err)
+          const fileInfo = window.floatingBallAPI.getFileInfo(filePath)
+          if (fileInfo) {
+            fileItems.push(fileInfo)
           }
         }
 
         if (fileItems.length > 0) {
-          ipcRenderer.send('floating-ball-file-drop', fileItems)
+          window.floatingBallAPI.send('floating-ball-file-drop', fileItems)
         }
       })
     </script>

@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'http'
 import { randomBytes } from 'crypto'
 import windowManager from '../managers/windowManager'
 import databaseAPI from '../api/shared/database'
+import { encryptSensitiveData, decryptSensitiveData } from '../utils/sensitiveDataEncryption'
 
 interface HttpServerConfig {
   enabled: boolean
@@ -40,7 +41,8 @@ class HttpServer {
         this.config = {
           enabled: saved.enabled ?? false,
           port: saved.port ?? DEFAULT_PORT,
-          apiKey: saved.apiKey || this.generateApiKey()
+          // Decrypt apiKey when loading from storage
+          apiKey: saved.apiKey ? decryptSensitiveData(saved.apiKey) : this.generateApiKey()
         }
       }
     } catch (error) {
@@ -51,10 +53,11 @@ class HttpServer {
 
   public async saveConfig(config: Partial<HttpServerConfig>): Promise<HttpServerConfig> {
     this.config = { ...this.config, ...config }
+    // Encrypt apiKey before storing
     databaseAPI.dbPut(DB_KEY, {
       enabled: this.config.enabled,
       port: this.config.port,
-      apiKey: this.config.apiKey
+      apiKey: this.config.apiKey ? encryptSensitiveData(this.config.apiKey) : ''
     })
     return this.config
   }
@@ -115,7 +118,7 @@ class HttpServer {
   private sendJson(res: ServerResponse, statusCode: number, body: ApiResponse): void {
     res.writeHead(statusCode, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': `http://127.0.0.1:${this.config.port}`,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     })
@@ -125,7 +128,7 @@ class HttpServer {
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': `http://127.0.0.1:${this.config.port}`,
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization'
       })

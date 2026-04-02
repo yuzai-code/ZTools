@@ -5,6 +5,9 @@ import type ClipboardManager from '../../managers/clipboardManager'
 import type { PluginManager } from '../../managers/pluginManager'
 import type WindowManagerInstance from '../../managers/windowManager'
 import { ClipboardMonitor, WindowManager } from '../../core/native/index.js'
+import pluginWindowManager from '../../core/pluginWindowManager'
+import { requirePermission } from '../../utils/pluginPermissionCheck'
+import type { PluginPermission } from '../../types/pluginPermissions'
 
 /**
  * 输入事件API - 插件专用
@@ -28,41 +31,79 @@ export class PluginInputAPI {
     this.setupIPC()
   }
 
+  /**
+   * 从 IPC 事件获取插件路径
+   */
+  private getPluginPathFromEvent(event: any): string | null {
+    const webContentsId = event.sender?.id
+    if (!webContentsId) return null
+    return pluginWindowManager.getPluginPathByWebContentsId(webContentsId)
+  }
+
+  /**
+   * 检查并要求指定权限
+   */
+  private requireInputPermission(event: any, permission: PluginPermission): void {
+    const pluginPath = this.getPluginPathFromEvent(event)
+    if (!pluginPath) return
+
+    // 获取插件声明的权限
+    let declaredPermissions: PluginPermission[] = []
+    try {
+      const pluginJsonPath = path.join(pluginPath, 'plugin.json')
+      if (fs.existsSync(pluginJsonPath)) {
+        const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8'))
+        declaredPermissions = pluginJson.permissions ?? []
+      }
+    } catch {
+      // 读取失败时使用空权限
+    }
+    requirePermission(pluginPath, permission, declaredPermissions)
+  }
+
   private setupIPC(): void {
     // 发送输入事件到插件
     ipcMain.handle(
       'send-input-event',
       (
-        _event,
+        event,
         inputEvent:
           | Electron.MouseInputEvent
           | Electron.MouseWheelInputEvent
           | Electron.KeyboardInputEvent
-      ) => this.sendInputEvent(inputEvent)
+      ) => {
+        this.requireInputPermission(event, 'input:simulate')
+        return this.sendInputEvent(inputEvent)
+      }
     )
 
     // 模拟键盘按键
     ipcMain.on('simulate-keyboard-tap', (event, key: string, modifiers: string[]) => {
+      this.requireInputPermission(event, 'input:simulate')
       event.returnValue = this.simulateKeyboardTap(key, modifiers)
     })
 
     // 模拟鼠标移动
     ipcMain.on('simulate-mouse-move', (event, x: number, y: number) => {
+      this.requireInputPermission(event, 'input:simulate')
       event.returnValue = this.simulateMouseMove(x, y)
     })
 
     // 模拟鼠标左键单击
     ipcMain.on('simulate-mouse-click', (event, x: number, y: number) => {
+      this.requireInputPermission(event, 'input:simulate')
       event.returnValue = this.simulateMouseClick(x, y)
     })
 
     // 模拟鼠标左键双击
     ipcMain.on('simulate-mouse-double-click', (event, x: number, y: number) => {
+      this.requireInputPermission(event, 'input:simulate')
       event.returnValue = this.simulateMouseDoubleClick(x, y)
     })
 
     // 模拟鼠标右键单击
     ipcMain.on('simulate-mouse-right-click', (event, x: number, y: number) => {
+      this.requireInputPermission(event, 'input:simulate')
       event.returnValue = this.simulateMouseRightClick(x, y)
     })
 
@@ -127,6 +168,8 @@ export class PluginInputAPI {
         event.returnValue = false
         return
       }
+      this.requireInputPermission(event, 'input:simulate')
+      this.requireInputPermission(event, 'clipboard:write')
 
       this.windowManager!.hideWindow(true)
       // 暂停剪贴板监听，防止写入剪贴板时自我触发
@@ -149,6 +192,8 @@ export class PluginInputAPI {
         event.returnValue = false
         return
       }
+      this.requireInputPermission(event, 'input:simulate')
+      this.requireInputPermission(event, 'clipboard:write')
 
       // 支持三种图片格式：base64 Data URL、文件路径、Uint8Array 缓冲区
       let nativeImg: Electron.NativeImage | undefined
@@ -189,6 +234,8 @@ export class PluginInputAPI {
         event.returnValue = false
         return
       }
+      this.requireInputPermission(event, 'input:simulate')
+      this.requireInputPermission(event, 'clipboard:write')
 
       let files = Array.isArray(filePaths) ? filePaths : [filePaths]
       files = files.filter((f) => fs.existsSync(f))
@@ -218,6 +265,7 @@ export class PluginInputAPI {
         event.returnValue = false
         return
       }
+      this.requireInputPermission(event, 'input:simulate')
 
       this.windowManager!.hideWindow(true)
 

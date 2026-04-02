@@ -3,6 +3,7 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'http'
 import { randomBytes } from 'crypto'
 import pluginToolsAPI from '../api/plugin/tools'
 import databaseAPI from '../api/shared/database'
+import { encryptSensitiveData, decryptSensitiveData } from '../utils/sensitiveDataEncryption'
 
 /**
  * MCP 服务持久化配置。
@@ -86,7 +87,8 @@ class McpServer {
         this.config = {
           enabled: saved.enabled ?? false,
           port: saved.port ?? DEFAULT_PORT,
-          apiKey: saved.apiKey || this.generateApiKey()
+          // Decrypt apiKey when loading from storage
+          apiKey: saved.apiKey ? decryptSensitiveData(saved.apiKey) : this.generateApiKey()
         }
       }
     } catch (error) {
@@ -100,10 +102,11 @@ class McpServer {
    */
   public async saveConfig(config: Partial<McpServerConfig>): Promise<McpServerConfig> {
     this.config = { ...this.config, ...config }
+    // Encrypt apiKey before storing
     databaseAPI.dbPut(DB_KEY, {
       enabled: this.config.enabled,
       port: this.config.port,
-      apiKey: this.config.apiKey
+      apiKey: this.config.apiKey ? encryptSensitiveData(this.config.apiKey) : ''
     })
     return this.config
   }
@@ -145,9 +148,9 @@ class McpServer {
         this.server = null
       })
 
-      // 监听全部网卡地址，允许局域网内其他设备通过本机 IP 访问。
-      this.server.listen(this.config.port, '0.0.0.0', () => {
-        console.log(`[McpServer] 服务已启动: http://0.0.0.0:${this.config.port}/mcp`)
+      // 仅监听本地地址，避免暴露到内网
+      this.server.listen(this.config.port, '127.0.0.1', () => {
+        console.log(`[McpServer] 服务已启动: http://127.0.0.1:${this.config.port}/mcp`)
       })
 
       return true
@@ -183,7 +186,7 @@ class McpServer {
   private sendRawJson(res: ServerResponse, statusCode: number, body: unknown): void {
     res.writeHead(statusCode, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': `http://127.0.0.1:${this.config.port}`,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     })
@@ -195,7 +198,7 @@ class McpServer {
    */
   private sendNoContent(res: ServerResponse): void {
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': `http://127.0.0.1:${this.config.port}`,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     })

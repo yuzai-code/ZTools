@@ -1,4 +1,5 @@
 import { httpGet, httpPost, httpHead } from './httpRequest'
+import { createContext, runInContext } from 'node:vm'
 
 let globalAcwCookie = ''
 
@@ -35,63 +36,48 @@ export async function getLanzouDownloadLink(url: string): Promise<string> {
       throw new Error('未找到脚本')
     }
 
-    // 5. 模拟 $ 对象并执行脚本
     let downloadLink = ''
 
-    const mockDollar = {
-      ajax: async (obj: any) => {
-        const origin = new URL(iframeUrl).origin
-        const requestUrl = origin + obj.url
+    // 解析 script 中的 $.ajax 调用，提取 URL 和参数
+    const ajaxMatch = scriptContent.match(
+      /\$\.ajax\s*\(\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+)['"][\s\S]*?data\s*:\s*\{([\s\S]*?)\}/
+    )
+    if (!ajaxMatch) {
+      throw new Error('未找到 $.ajax 调用')
+    }
+    const ajaxUrl = ajaxMatch[1]
+    const ajaxDataStr = ajaxMatch[2]
 
-        // 将 data 对象转换为 URLSearchParams
-        const formData = new URLSearchParams()
-        for (const key in obj.data) {
-          formData.append(key, obj.data[key])
-        }
-
-        const response = await httpPost(requestUrl, formData, {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            Referer: iframeUrl,
-            Cookie: `codelen=1; pc_ad1=1${globalAcwCookie ? '; ' + globalAcwCookie : ''}`
-          }
-        })
-
-        const jsonResponse = response.data
-
-        if (jsonResponse.zt === 1) {
-          downloadLink = jsonResponse.dom + '/file/' + jsonResponse.url
-        } else {
-          throw new Error(`获取下载链接失败，状态码: ${jsonResponse.zt}`)
-        }
-      }
+    // 解析 data 对象
+    const ajaxData: Record<string, string> = {}
+    const dataMatches = ajaxDataStr.matchAll(/(\w+)\s*:\s*['"]([^'"]*)['"]/g)
+    for (const match of dataMatches) {
+      ajaxData[match[1]] = match[2]
     }
 
-    // 我们需要在定义了 $ 的上下文中执行脚本。
-    // 脚本内容包含 'var ...'，所以如果我们提供了 $，直接 eval 应该可以工作。
-    // 因为脚本中的 ajax 调用是异步的（在我们的 mock 中），但脚本执行本身是同步的
-    // （它只是调用 $.ajax），我们需要处理异步特性。
-    // 然而，我们的 mock $.ajax 是异步的，但脚本并没有 await 它。
-    // 我们可以让 mock $.ajax 返回一个 promise，如果我们能捕获它，就可以等待它。
-    // 但是脚本只是调用 $.ajax({...})。
+    const origin = new URL(iframeUrl).origin
+    const requestUrl = origin + ajaxUrl
 
-    // 实际上，脚本调用了 $.ajax。我们可以让模拟的 $.ajax 将 promise 赋值给一个变量
-    // 以便在外部访问，这样我们就可以 await 它。
-
-    let ajaxPromise: Promise<void> | null = null
-    const mockDollarWithPromiseCapture = {
-      ajax: (obj: any) => {
-        ajaxPromise = mockDollar.ajax(obj)
-      }
+    // 发送请求
+    const formData = new URLSearchParams()
+    for (const key in ajaxData) {
+      formData.append(key, ajaxData[key])
     }
 
-    const runScript = new Function('$', scriptContent)
-    runScript(mockDollarWithPromiseCapture)
+    const response = await httpPost(requestUrl, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        Referer: iframeUrl,
+        Cookie: `codelen=1; pc_ad1=1${globalAcwCookie ? '; ' + globalAcwCookie : ''}`
+      }
+    })
 
-    if (ajaxPromise) {
-      await ajaxPromise
+    const jsonResponse = response.data
+
+    if (jsonResponse.zt === 1) {
+      downloadLink = jsonResponse.dom + '/file/' + jsonResponse.url
     } else {
-      throw new Error('$.ajax 未被调用')
+      throw new Error(`获取下载链接失败，状态码: ${jsonResponse.zt}`)
     }
 
     console.log('[Lanzou] downloadLink', downloadLink)
@@ -137,44 +123,41 @@ export async function getLanzouFolderFileList(url: string, password?: string): P
       throw new Error('未找到脚本')
     }
 
-    let ajaxData: any = null
-    let ajaxUrl = ''
-
-    const mockDollar = {
-      ajax: (config: any) => {
-        ajaxData = config.data
-        ajaxUrl = config.url
-      },
-      val: () => {},
-      text: () => {},
-      html: () => {},
-      appendTo: () => {},
-      hide: () => {},
-      show: () => {},
-      removeClass: () => {}
+    // 解析 script 中的 $.ajax 调用和 file() 函数
+    // 查找 function file() 定义及其中的 $.ajax 调用
+    const fileFunctionMatch = scriptContent.match(/function file\(\)\s*\{([\s\S]*?)\}/)
+    if (!fileFunctionMatch) {
+      throw new Error('未找到 file() 函数')
     }
 
-    // 模拟 $ 函数
-    const mockDollarFn = (): any => mockDollar
-    Object.assign(mockDollarFn, mockDollar)
+    const fileFunctionBody = fileFunctionMatch[1]
+    const ajaxMatch = fileFunctionBody.match(
+      /\$\.ajax\s*\(\s*\{[\s\S]*?url\s*:\s*['"]([^'"]+)['"][\s\S]*?data\s*:\s*\{([\s\S]*?)\}/
+    )
 
-    const mockDocument = {
-      getElementById: (id: string) => {
-        if (id === 'pwd') return { value: password || '' }
-        return { style: {}, innerHTML: '', value: '', addEventListener: () => {} }
-      },
-      title: ''
+    if (!ajaxMatch) {
+      throw new Error('未找到 $.ajax 调用')
     }
 
-    // 模拟 window
-    const mockWindow = {}
+    const ajaxUrl = ajaxMatch[1]
+    const ajaxDataStr = ajaxMatch[2]
 
-    // 追加调用 file()
-    const scriptToRun = scriptContent + '\nfile();'
+    // 解析 data 对象，提取变量值
+    const ajaxData: Record<string, string> = {}
+    const dataMatches = ajaxDataStr.matchAll(/(\w+)\s*:\s*(?:['"]([^'"]*)['"]|(\w+))/g)
+    for (const match of dataMatches) {
+      const key = match[1]
+      const strValue = match[2]
+      const varValue = match[3]
+      // 如果是字符串直接使用，否则尝试使用 password 参数
+      ajaxData[key] =
+        strValue || (varValue === 'lname' ? '' : varValue === 'pwd' ? password || '' : '')
+    }
 
-    // 执行脚本
-    const runScript = new Function('$', 'document', 'window', scriptToRun)
-    runScript(mockDollarFn, mockDocument, mockWindow)
+    // 确保有密码字段
+    if (!ajaxData['pwd'] && password) {
+      ajaxData['pwd'] = password
+    }
 
     if (!ajaxData || !ajaxUrl) {
       throw new Error('未捕获到 AJAX 请求')
@@ -410,9 +393,9 @@ function getAcwCookie(htmlContent: string, targetHost: string): CookieResult {
   `
 
   try {
-    // 5. 执行代码
-    const executeCode = new Function('mockEnv', functionBody)
-    const cookieString = executeCode(mockEnv)
+    // 5. 执行代码 - 使用 vm.runInContext 提供更好的隔离
+    const context = createContext(mockEnv)
+    const cookieString = runInContext(functionBody, context)
 
     // 6. 解析Cookie
     const cookieMatch = cookieString.match(/acw_sc__v2=([^;]+)/)

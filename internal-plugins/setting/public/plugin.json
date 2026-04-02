@@ -5,6 +5,14 @@
   "description": "ZTools 内置设置插件",
   "author": "Zing",
   "version": "1.0.0",
+  "permissions": [
+    "shell:open-path",
+    "clipboard:read",
+    "clipboard:write",
+    "file:read",
+    "file:write",
+    "http:request"
+  ],
   "main": "index.html",
   "logo": "logo.png",
   "development": {

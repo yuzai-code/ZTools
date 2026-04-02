@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, Menu, screen } from 'electron'
 import floatingBallHtml from '../../../resources/floatingBall.html?asset'
+import floatingBallPreload from '../../../resources/floatingBallPreload.js?asset'
 import databaseAPI from '../api/shared/database'
 import windowManager from '../managers/windowManager'
 
@@ -174,8 +175,9 @@ class FloatingBallManager {
       hasShadow: false,
       type: 'panel',
       webPreferences: {
-        contextIsolation: false,
-        nodeIntegration: true
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: floatingBallPreload
       }
     })
 

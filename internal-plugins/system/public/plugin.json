@@ -6,6 +6,16 @@
   "author": "Zing",
   "version": "1.0.0",
   "logo": "clear.png",
+  "permissions": [
+    "shell:open-path",
+    "shell:trash-item",
+    "clipboard:read",
+    "clipboard:write",
+    "input:simulate",
+    "file:read",
+    "file:write",
+    "system:process"
+  ],
   "features": [
     {
       "code": "clear",

@@ -1,10 +1,10 @@
 import { clipboard, Notification, BrowserWindow } from 'electron'
-import { exec } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { ScreenCapture } from './native'
 import windowManager from '../managers/windowManager'
+import { execFileNoThrow } from '../utils/execFileNoThrow'
 
 // 截图方法windows
 export const screenWindow = (
@@ -31,7 +31,7 @@ export const handleScreenShots = (
   cb: (image: string, bounds?: { x: number; y: number; width: number; height: number }) => void
 ): void => {
   const tmpPath = path.join(os.tmpdir(), `screenshot_${Date.now()}.png`)
-  exec(`screencapture -i -r "${tmpPath}"`, () => {
+  execFileNoThrow('screencapture', ['-i', '-r', tmpPath]).then(() => {
     if (fs.existsSync(tmpPath)) {
       try {
         const imageBuffer = fs.readFileSync(tmpPath)
