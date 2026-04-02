@@ -61,6 +61,14 @@ app.on('open-file', (event, filePath) => {
 // ========== 注册自定义协议为特权协议（必须在 app.ready 之前调用）==========
 registerIconScheme()
 
+// 忽略 EPIPE 错误（父进程被杀后管道断裂，electron-log 写 console 时触发）
+process.stdout?.on('error', (err) => {
+  if (err.code === 'EPIPE') return
+})
+process.stderr?.on('error', (err) => {
+  if (err.code === 'EPIPE') return
+})
+
 // 配置 electron-log
 log.transports.file.level = 'debug'
 log.transports.file.maxSize = 5 * 1024 * 1024 // 5MB

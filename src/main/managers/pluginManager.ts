@@ -4,7 +4,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import hideWindowHtml from '../../../resources/hideWindow.html?asset'
 
-import mainPreload from '../../../resources/preload-bridge.js?asset'
+import mainPreload from '../../../resources/preload.js?asset'
 import api from '../api'
 import { WINDOW_INITIAL_HEIGHT, WINDOW_DEFAULT_HEIGHT, WINDOW_WIDTH } from '../common/constants'
 import detachedWindowManager, { DETACHED_TITLEBAR_HEIGHT } from '../core/detachedWindowManager'
@@ -203,11 +203,11 @@ export class PluginManager {
     const view = new WebContentsView({
       webPreferences: {
         backgroundThrottling: false,
-        contextIsolation: true, // ✅ preload-bridge.js 使用 contextBridge
+        contextIsolation: false,
         nodeIntegration: false,
-        webSecurity: true,
-        sandbox: true, // ✅ preload-bridge.js 不使用 Node.js API
-        allowRunningInsecureContent: false,
+        webSecurity: false,
+        sandbox: false,
+        allowRunningInsecureContent: true,
         webviewTag: true,
         preload: preloadPath,
         session: sess,

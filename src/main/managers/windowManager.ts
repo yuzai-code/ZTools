@@ -160,7 +160,7 @@ class WindowManager {
         contextIsolation: true, // 启用上下文隔离
         nodeIntegration: false, // 渲染进程禁止直接使用 Node
         spellcheck: false, // 禁用拼写检查
-        webSecurity: true
+        webSecurity: false
       }
     }
 
