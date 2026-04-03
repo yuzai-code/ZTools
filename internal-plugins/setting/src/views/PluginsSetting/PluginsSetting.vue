@@ -11,6 +11,8 @@ import { useRouter } from 'vue-router'
 // }>()
 
 const { success, error, warning, info, confirm } = useToast()
+// 开发者工具插件的固定名称，用于自动重装场景
+const DEV_TOOL_PLUGIN_NAME = 'zTools-developer-plugin'
 
 // 插件相关状态
 const plugins = ref<any[]>([])
@@ -329,11 +331,22 @@ async function importDevPlugin(): Promise<void> {
   try {
     const result = await window.ztools.internal.importDevPlugin()
     if (result.success) {
+      if (result.pluginName === DEV_TOOL_PLUGIN_NAME) {
+        const installResult = await window.ztools.internal.installDevPlugin(result.pluginName)
+        if (!installResult.success) {
+          error(`安装开发者工具失败: ${installResult.error}`)
+          return
+        }
+      }
       // 重新加载插件列表
       await loadPlugins()
       // 关闭更多菜单
       showMoreMenu.value = false
-      success('开发中插件添加成功!')
+      if (result.pluginName === DEV_TOOL_PLUGIN_NAME) {
+        success('开发者工具已重新安装，可继续使用。')
+      } else {
+        success('开发项目已添加，请在 zTools 开发者工具中点击“安装（开发模式）”。')
+      }
     } else {
       error(`添加开发中插件失败: ${result.error}`)
     }
@@ -354,9 +367,20 @@ async function addDevPluginByFilePath(devPluginFilePath: string): Promise<void> 
   try {
     const result = await window.ztools.internal.importDevPlugin(filePath)
     if (result.success) {
+      if (result.pluginName === DEV_TOOL_PLUGIN_NAME) {
+        const installResult = await window.ztools.internal.installDevPlugin(result.pluginName)
+        if (!installResult.success) {
+          error(`安装开发者工具失败: ${installResult.error}`)
+          return
+        }
+      }
       // 重新加载插件列表
       await loadPlugins()
-      success('开发中插件添加成功!')
+      if (result.pluginName === DEV_TOOL_PLUGIN_NAME) {
+        success('开发者工具已重新安装，可继续使用。')
+      } else {
+        success('开发项目已添加，请在 zTools 开发者工具中点击“安装（开发模式）”。')
+      }
     } else {
       error(`添加开发中插件失败: ${result.error}`)
     }
@@ -674,7 +698,7 @@ useJumpFunction((state) => {
   if (state.localAddDevPluginFilePath) {
     void addDevPluginByFilePath(state.localAddDevPluginFilePath)
   } else if (state.payload) {
-    void openPluginByName(state.payload)
+    void openPluginByPayload(state.payload)
   }
 })
 
@@ -684,8 +708,8 @@ onUnmounted(() => {
 })
 
 // 打开指定插件名称的详情
-async function openPluginByName(pluginName: string): Promise<void> {
-  if (!pluginName) return
+async function openPluginByPayload(payload: string): Promise<void> {
+  if (!payload) return
 
   // 如果插件列表还没加载完，等待加载完成
   if (plugins.value.length === 0 && isLoading.value) {
@@ -699,7 +723,15 @@ async function openPluginByName(pluginName: string): Promise<void> {
     })
   }
 
-  const plugin = plugins.value.find((p) => p.name === pluginName)
+  let pluginName = payload
+  try {
+    const parsed = JSON.parse(payload)
+    pluginName = typeof parsed === 'string' ? parsed : (parsed?.pluginName ?? payload)
+  } catch {
+    // payload is a plain string
+  }
+
+  const plugin = plugins.value.find((candidate) => candidate.name === pluginName)
   if (plugin) {
     openPluginDetail(plugin)
   }

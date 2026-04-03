@@ -195,6 +195,7 @@ interface PluginWindowInfo {
   parentWebContents: Electron.WebContents
   pluginPath: string
   pluginName: string
+  sessionPartition: string
 }
 
 class PluginWindowManager {
@@ -208,6 +209,7 @@ class PluginWindowManager {
   public createWindow(
     pluginPath: string,
     pluginName: string,
+    sessionPartition: string,
     url: string,
     options: BrowserWindowConstructorOptions,
     senderWebContents: Electron.WebContents
@@ -219,16 +221,21 @@ class PluginWindowManager {
     }
 
     // 使用插件名称创建 session，确保和插件主视图共享同一个 session
-    const sess = session.fromPartition('persist:' + pluginName)
+    const sess = session.fromPartition(sessionPartition)
     sess.registerPreloadScript({
       type: 'frame',
       filePath: mainPreload
     })
 
     // 应用代理配置到插件 session
-    proxyManager.applyProxyToSession(sess, `插件窗口 ${pluginName}`).catch((error) => {
-      console.error(`[pluginWindow:create] 插件窗口 ${pluginName} 应用代理配置失败:`, error)
-    })
+    proxyManager
+      .applyProxyToSession(sess, `插件窗口 ${pluginName} (${sessionPartition})`)
+      .catch((error) => {
+        console.error(
+          `[pluginWindow:create] 插件窗口 ${pluginName} (${sessionPartition}) 应用代理配置失败:`,
+          error
+        )
+      })
 
     const win = new BrowserWindow({
       ...options,
@@ -248,7 +255,8 @@ class PluginWindowManager {
       window: win,
       parentWebContents: senderWebContents,
       pluginPath,
-      pluginName
+      pluginName,
+      sessionPartition
     })
 
     // 加载 URL
@@ -281,13 +289,25 @@ class PluginWindowManager {
       console.debug(`[pluginWindow:callback] dom-ready → trigger parent callback, winId=${win.id}`)
     })
 
+    win.webContents.on('render-process-gone', (_event, details) => {
+      if (win.isDestroyed()) return
+      console.warn(
+        `[pluginWindow:render-process-gone] winId=${win.id} plugin=${pluginName} reason=${details.reason} exitCode=${details.exitCode}`
+      )
+      win.destroy()
+    })
+
     // 监听窗口关闭
     win.on('closed', () => {
-      console.info(`[pluginWindow:destroy] winId=${win.id} unregistered from plugin=${pluginName}`)
+      console.info(
+        `[pluginWindow:destroy] winId=${win.id} unregistered from plugin=${pluginName} partition=${sessionPartition}`
+      )
       this.windowInfoMap.delete(win.id)
     })
 
-    console.info(`[pluginWindow:create] plugin=${pluginName} winId=${win.id} url=${url}`)
+    console.info(
+      `[pluginWindow:create] plugin=${pluginName} partition=${sessionPartition} winId=${win.id} url=${url}`
+    )
 
     return win
   }
@@ -297,6 +317,13 @@ class PluginWindowManager {
    */
   public getPluginNameByWindowId(winId: number): string | null {
     return this.windowInfoMap.get(winId)?.pluginName ?? null
+  }
+
+  /**
+   * 根据 win.id 获取窗口所属的插件路径，用于同名变体之间的权限校验。
+   */
+  public getPluginPathByWindowId(winId: number): string | null {
+    return this.windowInfoMap.get(winId)?.pluginPath ?? null
   }
 
   /**

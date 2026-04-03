@@ -198,6 +198,9 @@ const launchAtLogin = ref(false)
 // 开发者工具位置
 const devToolsMode = ref<'right' | 'bottom' | 'undocked' | 'detach'>('detach')
 
+// 关闭 GPU 加速（兜底方案，修改后需重启生效）
+const disableGpuAcceleration = ref(false)
+
 // 代理设置
 const proxyEnabled = ref(false)
 const proxyUrl = ref('')
@@ -966,6 +969,17 @@ async function handleDevToolsModeChange(): Promise<void> {
   }
 }
 
+// 处理关闭 GPU 加速开关变化
+async function handleDisableGpuAccelerationChange(): Promise<void> {
+  try {
+    await saveSettings()
+    info('设置已保存，重启应用后生效')
+    console.log('关闭 GPU 加速设置已更新:', disableGpuAcceleration.value)
+  } catch (err) {
+    console.error('保存关闭 GPU 加速设置失败:', err)
+  }
+}
+
 // 处理代理开关变化
 async function handleProxyEnabledChange(): Promise<void> {
   try {
@@ -1111,6 +1125,8 @@ async function loadSettings(): Promise<void> {
       acrylicDarkOpacity.value = data.acrylicDarkOpacity ?? 50
       // 开发者工具位置
       devToolsMode.value = data.devToolsMode ?? 'detach'
+      // GPU 加速控制
+      disableGpuAcceleration.value = data.disableGpuAcceleration ?? false
 
       // 代理配置
       proxyEnabled.value = data.proxyEnabled ?? false
@@ -1190,6 +1206,7 @@ async function saveSettings(): Promise<void> {
       acrylicLightOpacity: acrylicLightOpacity.value,
       acrylicDarkOpacity: acrylicDarkOpacity.value,
       devToolsMode: devToolsMode.value,
+      disableGpuAcceleration: disableGpuAcceleration.value,
       proxyEnabled: proxyEnabled.value,
       proxyUrl: proxyUrl.value,
       pluginMarketCustom: pluginMarketCustom.value,
@@ -2100,6 +2117,25 @@ onUnmounted(() => {
           />
         </div>
       </div>
+
+      <div class="setting-item">
+        <div class="setting-label">
+          <span>关闭 GPU 加速</span>
+          <span class="setting-desc"
+            >禁用硬件加速渲染，可解决白屏、渲染异常等 GPU 兼容性问题，修改后需重启应用生效</span
+          >
+        </div>
+        <div class="setting-control">
+          <label class="toggle">
+            <input
+              v-model="disableGpuAcceleration"
+              type="checkbox"
+              @change="handleDisableGpuAccelerationChange"
+            />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -2150,13 +2186,13 @@ onUnmounted(() => {
 }
 
 .setting-label > span:first-child {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-color);
 }
 
 .setting-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 

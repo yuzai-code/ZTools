@@ -6,11 +6,11 @@ import type { PluginManager } from '../../managers/pluginManager'
  * 提供设置请求头的功能
  */
 export class PluginHttpAPI {
-  // 存储每个插件的请求头配置
-  // key: pluginName, value: headers map
+  // 存储每个插件变体的请求头配置
+  // key: runtimeNamespace, value: headers map
   private pluginHeaders: Map<string, Record<string, string>> = new Map()
-  // 存储每个插件的拦截器监听器
-  // key: pluginName, value: listener function
+  // 存储每个插件变体的拦截器监听器
+  // key: runtimeNamespace, value: listener function
   private interceptors: Map<
     string,
     (
@@ -29,25 +29,25 @@ export class PluginHttpAPI {
     // 设置请求头
     ipcMain.on('http-set-headers', (event, headers: Record<string, string>) => {
       try {
-        const pluginName = this.getPluginNameFromWebContents(event.sender)
-        if (!pluginName) {
+        const runtimeNamespace = this.getPluginRuntimeNamespaceFromWebContents(event.sender)
+        if (!runtimeNamespace) {
           event.returnValue = { success: false, error: '无法识别插件' }
           return
         }
 
         // 保存请求头配置
-        this.pluginHeaders.set(pluginName, headers)
+        this.pluginHeaders.set(runtimeNamespace, headers)
 
         // 获取插件的session
         const sess = event.sender.session
 
         // 移除旧的拦截器（如果存在）
-        this.removeRequestInterceptor(pluginName, sess)
+        this.removeRequestInterceptor(runtimeNamespace, sess)
 
         // 设置新的请求拦截器
         const listener = this.setupRequestInterceptor(sess, headers)
         if (listener) {
-          this.interceptors.set(pluginName, listener)
+          this.interceptors.set(runtimeNamespace, listener)
         }
 
         event.returnValue = { success: true }
@@ -63,13 +63,13 @@ export class PluginHttpAPI {
     // 获取当前请求头配置
     ipcMain.on('http-get-headers', (event) => {
       try {
-        const pluginName = this.getPluginNameFromWebContents(event.sender)
-        if (!pluginName) {
+        const runtimeNamespace = this.getPluginRuntimeNamespaceFromWebContents(event.sender)
+        if (!runtimeNamespace) {
           event.returnValue = null
           return
         }
 
-        const headers = this.pluginHeaders.get(pluginName) || {}
+        const headers = this.pluginHeaders.get(runtimeNamespace) || {}
         event.returnValue = headers
       } catch (error: unknown) {
         console.error('[PluginHttp] 获取请求头失败:', error)
@@ -80,18 +80,18 @@ export class PluginHttpAPI {
     // 清除请求头配置
     ipcMain.on('http-clear-headers', (event) => {
       try {
-        const pluginName = this.getPluginNameFromWebContents(event.sender)
-        if (!pluginName) {
+        const runtimeNamespace = this.getPluginRuntimeNamespaceFromWebContents(event.sender)
+        if (!runtimeNamespace) {
           event.returnValue = { success: false, error: '无法识别插件' }
           return
         }
 
         // 移除请求头配置
-        this.pluginHeaders.delete(pluginName)
+        this.pluginHeaders.delete(runtimeNamespace)
 
         // 移除拦截器
         const sess = event.sender.session
-        this.removeRequestInterceptor(pluginName, sess)
+        this.removeRequestInterceptor(runtimeNamespace, sess)
 
         event.returnValue = { success: true }
       } catch (error: unknown) {
@@ -105,9 +105,12 @@ export class PluginHttpAPI {
   }
 
   /**
-   * 从 WebContents 获取插件名称
+   * 从 WebContents 获取插件运行时命名空间。
+   * 开发版与安装版必须使用不同 namespace，避免请求头配置串用。
    */
-  private getPluginNameFromWebContents(webContents: Electron.WebContents): string | null {
+  private getPluginRuntimeNamespaceFromWebContents(
+    webContents: Electron.WebContents
+  ): string | null {
     try {
       if (this.pluginManager) {
         const pluginInfo = this.pluginManager.getPluginInfoByWebContents(webContents)
@@ -122,7 +125,7 @@ export class PluginHttpAPI {
         // @ts-ignore - partition 属性可能不在类型定义中，但实际存在
         const partition = sess.partition
 
-        // partition 格式: 'persist:pluginName'
+        // partition 格式: 'persist:<runtimeNamespace>'
         if (partition && typeof partition === 'string' && partition.startsWith('persist:')) {
           return partition.substring(8) // 移除 'persist:' 前缀
         }
@@ -132,7 +135,7 @@ export class PluginHttpAPI {
 
       return null
     } catch (error) {
-      console.error('[PluginHttp] 获取插件名称失败:', error)
+      console.error('[PluginHttp] 获取插件运行时命名空间失败:', error)
       return null
     }
   }
@@ -184,8 +187,8 @@ export class PluginHttpAPI {
   /**
    * 移除请求拦截器
    */
-  private removeRequestInterceptor(pluginName: string, sess: Electron.Session): void {
-    const listener = this.interceptors.get(pluginName)
+  private removeRequestInterceptor(runtimeNamespace: string, sess: Electron.Session): void {
+    const listener = this.interceptors.get(runtimeNamespace)
     if (listener) {
       try {
         // 通过传递 null 作为 listener 来移除该监听器
@@ -197,7 +200,7 @@ export class PluginHttpAPI {
           },
           null as any
         )
-        this.interceptors.delete(pluginName)
+        this.interceptors.delete(runtimeNamespace)
       } catch (error) {
         console.warn('[PluginHttp] 移除请求拦截器失败:', error)
       }
@@ -207,10 +210,10 @@ export class PluginHttpAPI {
   /**
    * 清理插件数据（当插件卸载时调用）
    */
-  public cleanupPlugin(pluginName: string, sess?: Electron.Session): void {
-    this.pluginHeaders.delete(pluginName)
+  public cleanupPlugin(runtimeNamespace: string, sess?: Electron.Session): void {
+    this.pluginHeaders.delete(runtimeNamespace)
     if (sess) {
-      this.removeRequestInterceptor(pluginName, sess)
+      this.removeRequestInterceptor(runtimeNamespace, sess)
     }
   }
 }

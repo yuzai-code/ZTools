@@ -44,6 +44,23 @@ describe('getCommandId', () => {
     }
     expect(getCommandId(cmd)).toBe('sp:panel:超级面板:over')
   })
+
+  it('应将安装版和开发版同名命令使用不同 pluginName 区分', () => {
+    const installed = getCommandId({
+      name: '优秀待办',
+      path: '/Applications/ExcellentTodo',
+      pluginName: 'excellent-todo',
+      featureCode: 'open'
+    })
+    const development = getCommandId({
+      name: '优秀待办',
+      path: '/workspace/excellent-todo',
+      pluginName: 'excellent-todo__dev',
+      featureCode: 'open'
+    })
+
+    expect(installed).not.toBe(development)
+  })
 })
 
 // ========== applySpecialConfig ==========
@@ -140,8 +157,8 @@ describe('calculateMatchScore', () => {
   })
 
   it('无匹配信息时应返回 0', () => {
-    expect(calculateMatchScore('chrome', 'chrome')).toBe(0)
-    expect(calculateMatchScore('chrome', 'chrome', [])).toBe(0)
+    expect(calculateMatchScore('chrome browser', 'firefox')).toBe(0)
+    expect(calculateMatchScore('chrome browser', 'firefox', [])).toBe(0)
   })
 
   it('匹配长度占比越高分数越高', () => {

@@ -128,6 +128,7 @@ import AdaptiveIcon from '../common/AdaptiveIcon.vue'
 const platform = ref<'darwin' | 'win32'>('darwin')
 const pluginName = ref('Plugin')
 const pluginId = ref('') // 插件的实际 name（用于数据库操作，与未分离状态保持一致）
+const pluginPath = ref('')
 const pluginLogo = ref<string | undefined>(undefined)
 const searchQuery = ref('')
 const subInputVisible = ref(true) // 子输入框是否可见
@@ -138,6 +139,13 @@ const acrylicDarkOpacity = ref(50) // 亚克力暗黑模式透明度（默认 50
 const aiRequestStatus = ref<'idle' | 'sending' | 'receiving'>('idle') // AI 请求状态
 const primaryColor = ref('blue')
 const customColor = ref('#db2777')
+
+function normalizeConfigList(data: unknown): string[] {
+  if (!Array.isArray(data)) return []
+  return (data as any[])
+    .map((item) => (typeof item === 'string' ? item : (item?.pluginName ?? '')))
+    .filter(Boolean)
+}
 
 function getThemeColor(colorName: string, isDark: boolean): string {
   const colors: Record<string, { light: string; dark: string }> = {
@@ -305,6 +313,7 @@ onMounted(async () => {
     platform.value = data.platform
     pluginName.value = data.title || data.pluginName
     pluginId.value = data.pluginName // 保存实际的插件 name，用于数据库读写
+    pluginPath.value = data.pluginPath || ''
     pluginLogo.value = data.pluginLogo
 
     // 设置窗口标题
@@ -411,13 +420,12 @@ async function showPluginSettings(): Promise<void> {
     console.log('读取到的配置数据:', { outKillPluginData, autoDetachPluginData })
 
     // 确保数据是数组
-    const outKillPluginList: string[] = Array.isArray(outKillPluginData) ? outKillPluginData : []
-    const autoDetachPluginList: string[] = Array.isArray(autoDetachPluginData)
-      ? autoDetachPluginData
-      : []
+    const outKillPluginList: string[] = normalizeConfigList(outKillPluginData)
+    const autoDetachPluginList: string[] = normalizeConfigList(autoDetachPluginData)
 
-    const isAutoKill = outKillPluginList.includes(pluginId.value)
-    const isAutoDetach = autoDetachPluginList.includes(pluginId.value)
+    const currentName = pluginId.value
+    const isAutoKill = !!currentName && outKillPluginList.includes(currentName)
+    const isAutoDetach = !!currentName && autoDetachPluginList.includes(currentName)
 
     // 显示菜单
     const menuItems = [
@@ -450,26 +458,22 @@ async function showPluginSettings(): Promise<void> {
     // 处理菜单选择结果
     if (result?.id === 'toggle-auto-kill') {
       // 切换"退出到后台立即结束运行"
-      let updatedList = [...outKillPluginList]
-      if (isAutoKill) {
-        // 取消勾选
-        updatedList = updatedList.filter((name) => name !== pluginId.value)
-      } else {
-        // 勾选
-        updatedList.push(pluginId.value)
+      if (!currentName) {
+        return
       }
+      const updatedList = outKillPluginList.includes(currentName)
+        ? outKillPluginList.filter((n) => n !== currentName)
+        : [...outKillPluginList, currentName]
       await window.ztools.dbPut('outKillPlugin', updatedList)
-      console.log('已更新"退出到后台立即结束运行"配置:', updatedList)
+      console.log('已更新“退出到后台立即结束运行”配置:', updatedList)
     } else if (result?.id === 'toggle-auto-detach') {
-      // 切换"自动分离为独立窗口"
-      let updatedList = [...autoDetachPluginList]
-      if (isAutoDetach) {
-        // 取消勾选
-        updatedList = updatedList.filter((name) => name !== pluginId.value)
-      } else {
-        // 勾选
-        updatedList.push(pluginId.value)
+      // 切换“自动分离为独立窗口”
+      if (!currentName) {
+        return
       }
+      const updatedList = autoDetachPluginList.includes(currentName)
+        ? autoDetachPluginList.filter((n) => n !== currentName)
+        : [...autoDetachPluginList, currentName]
       await window.ztools.dbPut('autoDetachPlugin', updatedList)
       console.log('已更新"自动分离为独立窗口"配置:', updatedList)
     }

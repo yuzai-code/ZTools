@@ -9,6 +9,7 @@ import lmdbInstance from './lmdb/lmdbInstance'
 import devToolsShortcut, { getDevToolsMode } from '../utils/devToolsShortcut'
 import { WINDOW_WIDTH } from '../common/constants'
 import { registerExternalLinkInterceptor } from '../managers/pluginManager'
+import { getDetachedWindowSizeKey } from '../../shared/pluginRuntimeNamespace'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -63,8 +64,9 @@ class DetachedWindowManager {
     try {
       const normalizedWidth = Math.max(MIN_WINDOW_WIDTH, Math.round(width))
       const normalizedHeight = Math.max(MIN_VIEW_HEIGHT, Math.round(viewHeight))
+      const sizeKey = getDetachedWindowSizeKey(pluginName)
 
-      const lastSaved = this.lastSavedSizeByPlugin.get(pluginName)
+      const lastSaved = this.lastSavedSizeByPlugin.get(sizeKey)
       if (
         lastSaved &&
         lastSaved.width === normalizedWidth &&
@@ -76,14 +78,14 @@ class DetachedWindowManager {
       const existing = databaseAPI.dbGet('detachedWindowSizes') || {}
       const next = {
         ...(typeof existing === 'object' && existing !== null ? existing : {}),
-        [pluginName]: {
+        [sizeKey]: {
           width: normalizedWidth,
           height: normalizedHeight
         }
       }
 
       databaseAPI.dbPut('detachedWindowSizes', next)
-      this.lastSavedSizeByPlugin.set(pluginName, {
+      this.lastSavedSizeByPlugin.set(sizeKey, {
         width: normalizedWidth,
         height: normalizedHeight
       })
@@ -189,9 +191,13 @@ class DetachedWindowManager {
 
       // 标题栏加载完成后发送插件信息，并添加插件视图
       win.webContents.on('did-finish-load', () => {
-        console.log('[DetachedWindow] 标题栏加载完成，发送插件信息', pluginName, options)
+        console.log('[DetachedWindow] 标题栏加载完成，发送插件信息', {
+          pluginName,
+          options
+        })
         win.webContents.send('init-titlebar', {
           pluginName,
+          pluginPath,
           pluginLogo: options.logo,
           platform: process.platform,
           title: options.title, // 窗口标题

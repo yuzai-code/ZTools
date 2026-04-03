@@ -17,5 +17,7 @@ out
 .pnpm-store/*
 _*
 
+
 # Git worktrees
 .worktrees/
+/.sanshu-memory

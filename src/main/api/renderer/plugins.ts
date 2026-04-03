@@ -1,5 +1,6 @@
 import type { PluginManager } from '../../managers/pluginManager'
 import { app, dialog, ipcMain, shell } from 'electron'
+import { createHash } from 'crypto'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
@@ -18,6 +19,32 @@ import { packZpx, extractZpx, readTextFromZpx, readFileFromZpx } from '../../uti
 import { pluginFeatureAPI } from '../plugin/feature'
 import webSearchAPI from './webSearch'
 import databaseAPI from '../shared/database'
+import pluginDeviceAPI from '../plugin/device'
+import {
+  applyDevProjectsOrderUpdate,
+  buildInstalledDevelopmentPlugin,
+  canPackageDevProject,
+  DEV_PLUGIN_PROJECTS_DB_KEY,
+  DEV_PLUGIN_REGISTRY_DB_KEY,
+  getDevPluginLocalBindingsKey,
+  insertDevProjectAtTop,
+  mergeLegacyDevelopmentProjects,
+  migrateLegacyDevProjects,
+  rebindDevProjectFromConfig,
+  readDevProjectRecords,
+  readDevPluginLocalBindingsDoc,
+  readDevPluginRegistryDoc,
+  upsertDevProjectFromConfig,
+  validateRepairConfigSelection,
+  type DevPluginLocalBindingsDoc,
+  type DevPluginRegistryDoc,
+  type DevProjectLocalBinding
+} from './pluginDevelopmentRegistry'
+import {
+  getPluginDataPrefix,
+  isDevelopmentPluginName,
+  toDevPluginName
+} from '../../../shared/pluginRuntimeNamespace'
 
 // 插件目录
 const PLUGIN_DIR = path.join(app.getPath('userData'), 'plugins')
@@ -139,6 +166,34 @@ export class PluginsAPI {
     ipcMain.handle('import-plugin', () => this.importPlugin())
     ipcMain.handle('import-dev-plugin', (_event, pluginJsonPath?: string) =>
       this.importDevPlugin(pluginJsonPath)
+    )
+    ipcMain.handle('upsert-dev-project-by-config-path', (_event, pluginJsonPath: string) =>
+      this.upsertDevProjectByConfigPath(pluginJsonPath)
+    )
+    ipcMain.handle('get-dev-projects', () => this.getDevProjects())
+    ipcMain.handle('update-dev-projects-order', (_event, pluginNames: string[]) =>
+      this.updateDevProjectsOrder(pluginNames)
+    )
+    ipcMain.handle('remove-dev-project', (_event, pluginName: string) =>
+      this.removeDevProject(pluginName)
+    )
+    ipcMain.handle('install-dev-plugin', (_event, pluginPath: string) =>
+      this.installDevPlugin(pluginPath)
+    )
+    ipcMain.handle('uninstall-dev-plugin', (_event, pluginPath: string) =>
+      this.uninstallDevPlugin(pluginPath)
+    )
+    ipcMain.handle('validate-dev-project', (_event, pluginName: string) =>
+      this.validateDevProject(pluginName)
+    )
+    ipcMain.handle('reload-dev-project', (_event, pluginName: string) =>
+      this.reloadDevProject(pluginName)
+    )
+    ipcMain.handle('select-dev-project-config', (_event, pluginName: string) =>
+      this.selectDevProjectConfig(pluginName)
+    )
+    ipcMain.handle('package-dev-project', (_event, pluginName: string) =>
+      this.packageDevProject(pluginName)
     )
     ipcMain.handle('delete-plugin', (_event, pluginPath: string) => this.deletePlugin(pluginPath))
     ipcMain.handle('reload-plugin', (_event, pluginPath: string) => this.reloadPlugin(pluginPath))
@@ -351,6 +406,446 @@ export class PluginsAPI {
     }
   }
 
+  private readInstalledPlugins(): any[] {
+    const plugins = databaseAPI.dbGet('plugins')
+    return Array.isArray(plugins) ? plugins : []
+  }
+
+  private writeInstalledPlugins(plugins: any[]): void {
+    databaseAPI.dbPut('plugins', plugins)
+  }
+
+  private notifyPluginsChanged(): void {
+    this.mainWindow?.webContents.send('plugins-changed')
+  }
+
+  private getDeviceId(): string {
+    try {
+      return pluginDeviceAPI.getDeviceIdPublic()
+    } catch (error) {
+      console.warn('[Plugins] 获取设备 ID 失败，使用 fallback:', error)
+      const fallbackSeed = [
+        app.getPath('userData'),
+        app.getName(),
+        process.platform,
+        process.arch,
+        process.env.USER || '',
+        process.env.USERNAME || '',
+        process.env.HOSTNAME || ''
+      ].join('|')
+      return createHash('sha256').update(fallbackSeed).digest('hex').slice(0, 32)
+    }
+  }
+
+  private getCurrentDeviceBindingsDbKey(): { deviceId: string; key: string } {
+    const deviceId = this.getDeviceId()
+    return {
+      deviceId,
+      key: getDevPluginLocalBindingsKey(deviceId)
+    }
+  }
+
+  private writeDevProjectState(
+    registry: DevPluginRegistryDoc,
+    localBindings: DevPluginLocalBindingsDoc
+  ): void {
+    const localBindingsKey = getDevPluginLocalBindingsKey(localBindings.deviceId)
+    databaseAPI.dbPut(DEV_PLUGIN_REGISTRY_DB_KEY, registry)
+    databaseAPI.dbPut(localBindingsKey, localBindings)
+  }
+
+  private async migrateLegacyDevProjectStateIfNeeded(
+    registry: DevPluginRegistryDoc,
+    localBindings: DevPluginLocalBindingsDoc
+  ): Promise<{ registry: DevPluginRegistryDoc; localBindings: DevPluginLocalBindingsDoc }> {
+    const hasRegistryProjects = Object.keys(registry.projects).length > 0
+    const hasLocalBindings = Object.keys(localBindings.bindings).length > 0
+    if (hasRegistryProjects || hasLocalBindings) {
+      return { registry, localBindings }
+    }
+
+    const legacyRecords = readDevProjectRecords(databaseAPI.dbGet(DEV_PLUGIN_PROJECTS_DB_KEY))
+    const installedPlugins = this.readInstalledPlugins()
+    const mergedLegacyRecords = mergeLegacyDevelopmentProjects(legacyRecords, installedPlugins)
+    if (mergedLegacyRecords.length === 0) {
+      return { registry, localBindings }
+    }
+
+    console.log('[Plugins] 检测到旧版开发项目数据，开始迁移:', {
+      legacyCount: mergedLegacyRecords.length,
+      deviceId: localBindings.deviceId
+    })
+
+    const pluginConfigs: Record<string, any> = {}
+    for (const record of mergedLegacyRecords) {
+      const pluginJsonPath = path.join(record.path, 'plugin.json')
+      try {
+        pluginConfigs[pluginJsonPath] = await this.readPluginConfigFromFile(pluginJsonPath)
+      } catch {
+        // 忽略失效记录，迁移 helper 会跳过无法识别的配置
+      }
+    }
+
+    const migrated = migrateLegacyDevProjects({
+      legacyRecords: mergedLegacyRecords,
+      installedPlugins,
+      pluginConfigs,
+      deviceId: localBindings.deviceId
+    })
+
+    this.writeDevProjectState(migrated.registry, migrated.localBindings)
+    console.log('[Plugins] 开发项目旧数据迁移完成:', {
+      projectCount: Object.keys(migrated.registry.projects).length,
+      bindingCount: Object.keys(migrated.localBindings.bindings).length,
+      deviceId: migrated.localBindings.deviceId
+    })
+    return migrated
+  }
+
+  private async readDevProjectState(): Promise<{
+    registry: DevPluginRegistryDoc
+    localBindings: DevPluginLocalBindingsDoc
+  }> {
+    const { deviceId, key } = this.getCurrentDeviceBindingsDbKey()
+    const registryRaw = databaseAPI.dbGet(DEV_PLUGIN_REGISTRY_DB_KEY)
+    const localBindingsRaw = databaseAPI.dbGet(key)
+    const registry = readDevPluginRegistryDoc(registryRaw)
+    const localBindings = readDevPluginLocalBindingsDoc(localBindingsRaw, deviceId)
+    return this.migrateLegacyDevProjectStateIfNeeded(registry, localBindings)
+  }
+
+  private nowIso(): string {
+    return new Date().toISOString()
+  }
+
+  /**
+   * 将 name、项目目录、配置路径和已安装开发插件路径统一解析为开发项目 identity。
+   */
+  private resolveDevProjectName(
+    projectNameOrPath: string,
+    registry: DevPluginRegistryDoc,
+    localBindings: DevPluginLocalBindingsDoc,
+    installedPlugins: any[] = []
+  ): string | null {
+    if (typeof projectNameOrPath !== 'string' || !projectNameOrPath.trim()) {
+      return null
+    }
+    const normalizedIdentity = projectNameOrPath.trim()
+    if (registry.projects[normalizedIdentity]) {
+      return normalizedIdentity
+    }
+
+    const maybePath = path.resolve(normalizedIdentity)
+    for (const binding of Object.values(localBindings.bindings)) {
+      if (binding.projectPath && path.resolve(binding.projectPath) === maybePath) {
+        return binding.name
+      }
+      if (binding.configPath && path.resolve(binding.configPath) === maybePath) {
+        return binding.name
+      }
+    }
+
+    const installedByPath = installedPlugins.find(
+      (plugin) => typeof plugin.path === 'string' && path.resolve(plugin.path) === maybePath
+    )
+    if (installedByPath?.isDevelopment && typeof installedByPath.name === 'string') {
+      return installedByPath.name
+    }
+
+    const installedByName = installedPlugins.find(
+      (plugin) => plugin?.isDevelopment && plugin?.name === normalizedIdentity
+    )
+    if (installedByName?.name) {
+      return installedByName.name
+    }
+
+    return null
+  }
+
+  private async readPluginConfigFromFile(configPath: string): Promise<any> {
+    const content = await fs.readFile(configPath, 'utf-8')
+    return JSON.parse(content)
+  }
+
+  /**
+   * 按需刷新某个开发项目在当前设备上的绑定状态，并同步回主记录快照。
+   */
+  private async validateAndRefreshDevProjectState(
+    projectName: string,
+    state?: { registry: DevPluginRegistryDoc; localBindings: DevPluginLocalBindingsDoc }
+  ): Promise<{
+    success: boolean
+    error?: string
+    registry: DevPluginRegistryDoc
+    localBindings: DevPluginLocalBindingsDoc
+    binding?: DevProjectLocalBinding
+    pluginConfig?: any
+  }> {
+    const currentState = state ?? (await this.readDevProjectState())
+    const registryEntry = currentState.registry.projects[projectName]
+    if (!registryEntry) {
+      console.warn('[Plugins] 校验开发项目失败，项目不存在:', projectName)
+      return {
+        success: false,
+        error: `开发项目 "${projectName}" 不存在`,
+        registry: currentState.registry,
+        localBindings: currentState.localBindings
+      }
+    }
+
+    const now = this.nowIso()
+    const currentBinding = currentState.localBindings.bindings[projectName]
+    if (!currentBinding) {
+      console.warn('[Plugins] 开发项目缺少当前设备绑定，标记为 unbound:', {
+        projectName,
+        deviceId: currentState.localBindings.deviceId
+      })
+      const unboundBinding: DevProjectLocalBinding = {
+        name: projectName,
+        projectPath: null,
+        configPath: null,
+        status: 'unbound',
+        lastValidatedAt: now,
+        updatedAt: now,
+        lastError: '项目未绑定到当前设备路径'
+      }
+      const localBindings = {
+        ...currentState.localBindings,
+        updatedAt: now,
+        bindings: {
+          ...currentState.localBindings.bindings,
+          [projectName]: unboundBinding
+        }
+      }
+      this.writeDevProjectState(currentState.registry, localBindings)
+      return {
+        success: false,
+        error: unboundBinding.lastError,
+        registry: currentState.registry,
+        localBindings,
+        binding: unboundBinding
+      }
+    }
+
+    const fallbackConfigPath =
+      currentBinding.projectPath && currentBinding.projectPath.trim()
+        ? path.join(currentBinding.projectPath, 'plugin.json')
+        : ''
+    const candidateConfigPaths = [currentBinding.configPath, fallbackConfigPath].filter(
+      (item, index, list): item is string => !!item && list.indexOf(item) === index
+    )
+
+    console.log('[Plugins] 开始校验开发项目配置状态:', {
+      projectName,
+      candidateConfigPaths
+    })
+
+    let usedConfigPath = currentBinding.configPath
+    let pluginConfig: any | null = null
+    let validationStatus: DevProjectLocalBinding['status'] = 'config_missing'
+    let lastError = 'plugin.json 文件不存在'
+
+    for (const candidatePath of candidateConfigPaths) {
+      try {
+        const loadedConfig = await this.readPluginConfigFromFile(candidatePath)
+        if (!loadedConfig?.name) {
+          validationStatus = 'invalid_config'
+          lastError = 'plugin.json 缺少 name 字段'
+          usedConfigPath = candidatePath
+          break
+        }
+        if (loadedConfig.name !== projectName) {
+          validationStatus = 'invalid_config'
+          lastError = `plugin.json name 与项目不一致（期望: ${projectName}，实际: ${loadedConfig.name}）`
+          usedConfigPath = candidatePath
+          break
+        }
+        if (isBundledInternalPlugin(loadedConfig.name)) {
+          validationStatus = 'invalid_config'
+          lastError = '内置插件不能作为开发项目'
+          usedConfigPath = candidatePath
+          break
+        }
+        validationStatus = 'ready'
+        lastError = ''
+        usedConfigPath = candidatePath
+        pluginConfig = loadedConfig
+        break
+      } catch (error) {
+        validationStatus = 'config_missing'
+        lastError = error instanceof Error ? error.message : 'plugin.json 不可读取'
+        usedConfigPath = candidatePath
+      }
+    }
+
+    const nextBinding: DevProjectLocalBinding = {
+      ...currentBinding,
+      name: projectName,
+      projectPath: usedConfigPath ? path.dirname(usedConfigPath) : currentBinding.projectPath,
+      configPath: usedConfigPath,
+      status: validationStatus,
+      lastValidatedAt: now,
+      updatedAt: now,
+      ...(lastError ? { lastError } : {})
+    }
+    if (!lastError && 'lastError' in nextBinding) {
+      delete nextBinding.lastError
+    }
+
+    const nextRegistryProjects = { ...currentState.registry.projects }
+    if (pluginConfig) {
+      nextRegistryProjects[projectName] = {
+        ...registryEntry,
+        configSnapshot: { ...pluginConfig },
+        updatedAt: now
+      }
+    }
+
+    const nextRegistry: DevPluginRegistryDoc = {
+      ...currentState.registry,
+      projects: nextRegistryProjects
+    }
+    const nextLocalBindings: DevPluginLocalBindingsDoc = {
+      ...currentState.localBindings,
+      updatedAt: now,
+      bindings: {
+        ...currentState.localBindings.bindings,
+        [projectName]: nextBinding
+      }
+    }
+
+    this.writeDevProjectState(nextRegistry, nextLocalBindings)
+    console.log('[Plugins] 开发项目配置状态已刷新:', {
+      projectName,
+      status: validationStatus,
+      configPath: nextBinding.configPath,
+      hasSnapshotUpdate: !!pluginConfig
+    })
+    return {
+      success: validationStatus === 'ready',
+      ...(validationStatus === 'ready' ? {} : { error: lastError }),
+      registry: nextRegistry,
+      localBindings: nextLocalBindings,
+      binding: nextBinding,
+      ...(pluginConfig ? { pluginConfig } : {})
+    }
+  }
+
+  /**
+   * 删除开发版插件变体时，同时清理与该变体关联的历史、固定、自启动等持久化数据。
+   */
+  private removePluginUsageData(effectiveName: string): void {
+    const history: any[] = databaseAPI.dbGet('command-history') || []
+    const newHistory = history.filter((item: any) => item?.pluginName !== effectiveName)
+    if (newHistory.length !== history.length) {
+      databaseAPI.dbPut('command-history', newHistory)
+      this.mainWindow?.webContents.send('history-changed')
+    }
+
+    const pinned: any[] = databaseAPI.dbGet('pinned-commands') || []
+    const newPinned = pinned.filter((item: any) => item?.pluginName !== effectiveName)
+    if (newPinned.length !== pinned.length) {
+      databaseAPI.dbPut('pinned-commands', newPinned)
+      this.mainWindow?.webContents.send('pinned-changed')
+    }
+
+    const autoStartPlugins: string[] = databaseAPI.dbGet('autoStartPlugin') || []
+    const nextAutoStartPlugins = autoStartPlugins.filter((n) => n !== effectiveName)
+    if (nextAutoStartPlugins.length !== autoStartPlugins.length) {
+      databaseAPI.dbPut('autoStartPlugin', nextAutoStartPlugins)
+    }
+
+    const outKillPlugins: string[] = databaseAPI.dbGet('outKillPlugin') || []
+    const nextOutKillPlugins = outKillPlugins.filter((n) => n !== effectiveName)
+    if (nextOutKillPlugins.length !== outKillPlugins.length) {
+      databaseAPI.dbPut('outKillPlugin', nextOutKillPlugins)
+    }
+
+    const autoDetachPlugins: string[] = databaseAPI.dbGet('autoDetachPlugin') || []
+    const nextAutoDetachPlugins = autoDetachPlugins.filter((n) => n !== effectiveName)
+    if (nextAutoDetachPlugins.length !== autoDetachPlugins.length) {
+      databaseAPI.dbPut('autoDetachPlugin', nextAutoDetachPlugins)
+    }
+  }
+
+  public async getDevProjects(): Promise<any[]> {
+    try {
+      const { registry, localBindings } = await this.readDevProjectState()
+      const installedPlugins = this.readInstalledPlugins()
+      const runningPluginPaths = this.getRunningPlugins()
+      const runningSet = new Set(runningPluginPaths.map((item) => path.resolve(item)))
+      const devInstalledByName = new Map<string, any>()
+      for (const plugin of installedPlugins) {
+        if (plugin?.isDevelopment && typeof plugin?.name === 'string') {
+          devInstalledByName.set(plugin.name, plugin)
+        }
+      }
+
+      const projects: any[] = []
+      const orderedProjects = Object.entries(registry.projects).sort(
+        ([, projectA], [, projectB]) => projectA.sortOrder - projectB.sortOrder
+      )
+      for (const [name, project] of orderedProjects) {
+        const localBinding = localBindings.bindings[name]
+        const localPath = localBinding?.projectPath ? path.resolve(localBinding.projectPath) : null
+        const installedDevPlugin =
+          devInstalledByName.get(toDevPluginName(name)) || devInstalledByName.get(name)
+        const installedPath =
+          typeof installedDevPlugin?.path === 'string'
+            ? path.resolve(installedDevPlugin.path)
+            : null
+        const projectPath = localPath || null
+
+        projects.push({
+          name,
+          title: project.configSnapshot.title,
+          version: project.configSnapshot.version,
+          description: project.configSnapshot.description || '',
+          author: project.configSnapshot.author || '',
+          homepage: project.configSnapshot.homepage || '',
+          logo: projectPath
+            ? this.resolvePluginLogo(projectPath, project.configSnapshot.logo)
+            : project.configSnapshot.logo || '',
+          preload: project.configSnapshot.preload,
+          features: Array.isArray(project.configSnapshot.features)
+            ? project.configSnapshot.features
+            : [],
+          developmentMain: project.configSnapshot.development?.main,
+          path: projectPath,
+          configPath: localBinding?.configPath || null,
+          localStatus: localBinding?.status || 'unbound',
+          lastValidatedAt: localBinding?.lastValidatedAt || null,
+          lastError: localBinding?.lastError || null,
+          isDevModeInstalled: !!installedDevPlugin,
+          isRunning: !!(
+            (projectPath && runningSet.has(projectPath)) ||
+            (installedPath && runningSet.has(installedPath))
+          ),
+          addedAt: project.addedAt,
+          sortOrder: project.sortOrder
+        })
+      }
+
+      return projects
+    } catch (error) {
+      console.error('[Plugins] 获取开发项目列表失败:', error)
+      return []
+    }
+  }
+
+  private async updateDevProjectsOrder(pluginNames: string[]): Promise<any> {
+    try {
+      const state = await this.readDevProjectState()
+      const nextRegistry = applyDevProjectsOrderUpdate(state.registry, pluginNames)
+      this.writeDevProjectState(nextRegistry, state.localBindings)
+      this.notifyPluginsChanged()
+      return { success: true }
+    } catch (error) {
+      console.error('[Plugins] 更新开发项目顺序失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '更新顺序失败' }
+    }
+  }
+
   /**
    * 验证插件配置
    * @param pluginConfig 插件配置对象
@@ -362,8 +857,11 @@ export class PluginsAPI {
     existingPlugins: any[]
   ): { valid: boolean; error?: string } {
     // 检查 title 是否冲突（如果有 title 字段）
+    // 排除开发版插件（name 以 __dev 结尾），因为开发版和安装版可以共存，title 相同是合理的
     if (pluginConfig.title) {
-      const titleConflict = existingPlugins.find((p: any) => p.title === pluginConfig.title)
+      const titleConflict = existingPlugins.find(
+        (p: any) => p.title === pluginConfig.title && !isDevelopmentPluginName(p.name)
+      )
       if (titleConflict) {
         return {
           valid: false,
@@ -438,6 +936,12 @@ export class PluginsAPI {
     }
 
     return { valid: true }
+  }
+
+  private resolvePluginLogo(pluginPath: string, logo: unknown): string {
+    if (typeof logo !== 'string' || !logo) return ''
+    if (/^(https?:|file:)/.test(logo)) return logo
+    return pathToFileURL(path.join(pluginPath, logo)).href
   }
 
   /**
@@ -803,9 +1307,12 @@ export class PluginsAPI {
     }
   }
 
-  // 导入开发中插件
+  /**
+   * 导入开发项目，只登记主记录与当前设备绑定，不会自动进入搜索结果。
+   */
   private async importDevPlugin(pluginJsonPath?: string): Promise<any> {
     try {
+      console.log('[Plugins] 开始导入开发项目:', pluginJsonPath || '通过选择器选择')
       // 如果没有传入路径，通过对话框选择
       if (!pluginJsonPath) {
         const result = await dialog.showOpenDialog(this.mainWindow!, {
@@ -816,6 +1323,7 @@ export class PluginsAPI {
         })
 
         if (result.canceled || result.filePaths.length === 0) {
+          console.log('[Plugins] 导入开发项目已取消')
           return { success: false, error: '未选择文件' }
         }
 
@@ -828,12 +1336,10 @@ export class PluginsAPI {
       }
 
       // 获取插件文件夹路径（plugin.json 所在的目录）
-      const pluginPath = path.dirname(pluginJsonPath)
-
-      const pluginJsonContent = await fs.readFile(pluginJsonPath, 'utf-8')
+      const pluginPath = path.resolve(path.dirname(pluginJsonPath))
       let pluginConfig: any
       try {
-        pluginConfig = JSON.parse(pluginJsonContent)
+        pluginConfig = await this.readPluginConfigFromFile(pluginJsonPath)
       } catch {
         return { success: false, error: 'plugin.json 格式错误' }
       }
@@ -842,71 +1348,141 @@ export class PluginsAPI {
         return { success: false, error: 'plugin.json 缺少 name 字段' }
       }
 
-      const existingPlugins = await this.getPlugins()
-      if (existingPlugins.some((p: any) => p.name === pluginConfig.name)) {
-        return { success: false, error: '插件已存在' }
+      if (isBundledInternalPlugin(pluginConfig.name)) {
+        return { success: false, error: '内置插件不能作为开发项目导入' }
       }
 
-      // 验证插件配置
-      const validation = this.validatePluginConfig(pluginConfig, existingPlugins)
+      const existingPlugins = this.readInstalledPlugins()
+      const devNameForValidation = toDevPluginName(pluginConfig.name)
+      const validation = this.validatePluginConfig(
+        pluginConfig,
+        existingPlugins.filter(
+          (p) => p?.name !== pluginConfig.name && p?.name !== devNameForValidation
+        )
+      )
       if (!validation.valid) {
         return { success: false, error: validation.error }
       }
 
-      const pluginInfo = {
-        name: pluginConfig.name,
-        title: pluginConfig.title,
-        version: pluginConfig.version,
-        description: pluginConfig.description || '',
-        author: pluginConfig.author || '',
-        homepage: pluginConfig.homepage || '',
-        logo: pluginConfig.logo ? pathToFileURL(path.join(pluginPath, pluginConfig.logo)).href : '',
-        main: pluginConfig?.development?.main,
-        preload: pluginConfig.preload,
-        features: pluginConfig.features,
-        path: pluginPath,
-        isDevelopment: true,
-        installedAt: new Date().toISOString()
+      const state = await this.readDevProjectState()
+      const projectName = pluginConfig.name
+      const hasExistingProject = Boolean(projectName && state.registry.projects[projectName])
+      const upserted = upsertDevProjectFromConfig({
+        registry: state.registry,
+        localBindings: state.localBindings,
+        pluginPath,
+        pluginConfig
+      })
+      if (!upserted.success) {
+        return { success: false, error: upserted.reason || '开发项目登记失败' }
       }
+      const nextRegistry =
+        !hasExistingProject && projectName
+          ? insertDevProjectAtTop(upserted.registry, projectName)
+          : upserted.registry
+      this.writeDevProjectState(nextRegistry, upserted.localBindings)
 
-      let plugins: any = databaseAPI.dbGet('plugins')
-      if (!plugins) plugins = []
-      plugins.push(pluginInfo)
-      databaseAPI.dbPut('plugins', plugins)
-
-      // 输出新增的指令
-      console.log('[Plugins] \n=== 新增开发中插件指令 ===')
+      // 输出新增的开发项目信息
+      console.log('[Plugins] \n=== 新增开发项目 ===')
       console.log(`插件名称: ${pluginConfig.name}`)
       console.log(`插件版本: ${pluginConfig.version}`)
-      console.log(`开发模式: ${pluginConfig.development?.main || '无'}`)
-      console.log('[Plugins] 新增指令列表:')
-      pluginConfig.features.forEach((feature: any, index: number) => {
-        console.log(`  [${index + 1}] ${feature.code} - ${feature.explain || '无说明'}`)
-
-        // 格式化 cmds（区分字符串和对象）
-        const formattedCmds = feature.cmds
-          .map((cmd: any) => {
-            if (typeof cmd === 'string') {
-              return cmd
-            } else if (typeof cmd === 'object' && cmd !== null) {
-              // 对象类型的匹配指令
-              const type = cmd.type || 'unknown'
-              const label = cmd.label || type
-              return `[${type}] ${label}`
-            }
-            return String(cmd)
-          })
-          .join(', ')
-
-        console.log(`      关键词: ${formattedCmds}`)
-      })
+      console.log(`工程目录: ${pluginPath}`)
+      console.log(`开发模式入口: ${pluginConfig.development?.main || '无'}`)
       console.log('[Plugins] =========================\n')
+      console.log('[Plugins] 开发项目已登记:', {
+        pluginName: pluginConfig.name,
+        projectPath: pluginPath,
+        configPath: pluginJsonPath
+      })
 
-      this.mainWindow?.webContents.send('plugins-changed')
+      this.notifyPluginsChanged()
       this.mainWindow?.webContents.send('super-panel-pinned-changed')
-      return { success: true }
+      return {
+        success: true,
+        pluginName: pluginConfig.name,
+        pluginPath
+      }
     } catch (error: unknown) {
       console.error('[Plugins] 添加开发中插件失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 根据传入的 plugin.json 路径导入开发项目。
+   * 若 name 已存在，则更新当前设备绑定路径；否则新建项目。
+   */
+  private async upsertDevProjectByConfigPath(pluginJsonPath: string): Promise<any> {
+    try {
+      if (!pluginJsonPath) {
+        return { success: false, error: '未提供 plugin.json 路径' }
+      }
+
+      const normalizedConfigPath = path.resolve(pluginJsonPath)
+      if (path.basename(normalizedConfigPath) !== 'plugin.json') {
+        return { success: false, error: '请选择 plugin.json 文件' }
+      }
+
+      let pluginConfig: any
+      try {
+        pluginConfig = await this.readPluginConfigFromFile(normalizedConfigPath)
+      } catch {
+        return { success: false, error: 'plugin.json 格式错误' }
+      }
+
+      if (!pluginConfig.name) {
+        return { success: false, error: 'plugin.json 缺少 name 字段' }
+      }
+
+      if (isBundledInternalPlugin(pluginConfig.name)) {
+        return { success: false, error: '内置插件不能作为开发项目导入' }
+      }
+
+      const existingPlugins = this.readInstalledPlugins()
+      const devNameForValidation = toDevPluginName(pluginConfig.name)
+      const validation = this.validatePluginConfig(
+        pluginConfig,
+        existingPlugins.filter(
+          (p) => p?.name !== pluginConfig.name && p?.name !== devNameForValidation
+        )
+      )
+      if (!validation.valid) {
+        return { success: false, error: validation.error }
+      }
+
+      const state = await this.readDevProjectState()
+      const projectName = pluginConfig.name
+      if (!state.registry.projects[projectName]) {
+        return await this.importDevPlugin(normalizedConfigPath)
+      }
+
+      const rebound = rebindDevProjectFromConfig({
+        registry: state.registry,
+        localBindings: state.localBindings,
+        pluginJsonPath: normalizedConfigPath,
+        pluginConfig
+      })
+      if (!rebound.success) {
+        return { success: false, error: rebound.reason || '开发项目重绑失败' }
+      }
+
+      this.writeDevProjectState(rebound.registry, rebound.localBindings)
+      const validated = await this.validateAndRefreshDevProjectState(projectName, {
+        registry: rebound.registry,
+        localBindings: rebound.localBindings
+      })
+      if (!validated.success) {
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发项目 upsert 完成:', {
+        projectName,
+        configPath: normalizedConfigPath
+      })
+      return { success: true, pluginName: projectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] upsert 开发项目失败:', error)
       return { success: false, error: error instanceof Error ? error.message : '未知错误' }
     }
   }
@@ -937,29 +1513,18 @@ export class PluginsAPI {
       plugins.splice(pluginIndex, 1)
       databaseAPI.dbPut('plugins', plugins)
 
-      const history: { pluginName: string }[] = databaseAPI.dbGet('command-history') || []
-      const newHistory = history.filter((item) => item.pluginName !== pluginInfo.name)
-      if (newHistory.length !== history.length) {
-        databaseAPI.dbPut('command-history', newHistory)
-        this.mainWindow?.webContents.send('history-changed')
-      }
+      this.removePluginUsageData(pluginInfo.name)
 
-      const pinned: { pluginName: string }[] = databaseAPI.dbGet('pinned-commands') || []
-      const newPinned = pinned.filter((item) => item.pluginName !== pluginInfo.name)
-      if (newPinned.length !== pinned.length) {
-        databaseAPI.dbPut('pinned-commands', newPinned)
-        this.mainWindow?.webContents.send('pinned-changed')
-      }
+      await databaseAPI.clearPluginData(pluginInfo.name)
 
+      // 删除禁用插件标识
       const disabledPlugins = this.getDisabledPluginSet()
       if (disabledPlugins.delete(pluginPath)) {
         this.disabledPluginPathSet = disabledPlugins
         databaseAPI.dbPut(DISABLED_PLUGINS_KEY, [...disabledPlugins])
       }
 
-      await databaseAPI.clearPluginData(pluginInfo.name)
-
-      this.mainWindow?.webContents.send('plugins-changed')
+      this.notifyPluginsChanged()
 
       if (!pluginInfo.isDevelopment) {
         try {
@@ -982,18 +1547,31 @@ export class PluginsAPI {
   // 重载插件
   private async reloadPlugin(pluginPath: string): Promise<any> {
     try {
-      const plugins: any = databaseAPI.dbGet('plugins')
-      if (!plugins || !Array.isArray(plugins)) {
+      const plugins = this.readInstalledPlugins()
+      if (!Array.isArray(plugins)) {
         return { success: false, error: '插件列表不存在' }
       }
 
-      const pluginIndex = plugins.findIndex((p: any) => p.path === pluginPath)
+      const normalizedPluginPath = path.resolve(pluginPath)
+      const pluginIndex = plugins.findIndex(
+        (plugin) =>
+          typeof plugin.path === 'string' && path.resolve(plugin.path) === normalizedPluginPath
+      )
       if (pluginIndex === -1) {
-        return { success: false, error: '插件不存在' }
+        const state = await this.readDevProjectState()
+        const projectName = this.resolveDevProjectName(
+          pluginPath,
+          state.registry,
+          state.localBindings
+        )
+        if (!projectName) {
+          return { success: false, error: '插件不存在' }
+        }
+        return this.reloadDevProject(projectName)
       }
 
       const oldPlugin = plugins[pluginIndex]
-      const pluginJsonPath = path.join(pluginPath, 'plugin.json')
+      const pluginJsonPath = path.join(normalizedPluginPath, 'plugin.json')
 
       try {
         await fs.access(pluginJsonPath)
@@ -1002,8 +1580,7 @@ export class PluginsAPI {
         return { success: false, error: 'plugin.json 文件不存在' }
       }
 
-      const pluginJsonContent = await fs.readFile(pluginJsonPath, 'utf-8')
-      const pluginConfig = JSON.parse(pluginJsonContent)
+      const pluginConfig = await this.readPluginConfigFromFile(pluginJsonPath)
 
       plugins[pluginIndex] = {
         ...oldPlugin,
@@ -1014,15 +1591,18 @@ export class PluginsAPI {
         author: pluginConfig.author ?? oldPlugin.author,
         homepage: pluginConfig.homepage ?? oldPlugin.homepage,
         logo: pluginConfig.logo
-          ? pathToFileURL(path.join(pluginPath, pluginConfig.logo)).href
+          ? pathToFileURL(path.join(normalizedPluginPath, pluginConfig.logo)).href
           : oldPlugin.logo,
         features: pluginConfig.features || oldPlugin.features,
-        main: pluginConfig.main || oldPlugin.main
+        main:
+          oldPlugin.isDevelopment && pluginConfig.development?.main
+            ? pluginConfig.development.main
+            : pluginConfig.main || oldPlugin.main
       }
 
-      databaseAPI.dbPut('plugins', plugins)
-      this.mainWindow?.webContents.send('plugins-changed')
-      console.log('[Plugins] 插件重载成功:', pluginPath)
+      this.writeInstalledPlugins(plugins)
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 插件重载成功:', normalizedPluginPath)
       return { success: true }
     } catch (error: unknown) {
       console.error('[Plugins] 重载插件失败:', error)
@@ -1036,6 +1616,414 @@ export class PluginsAPI {
       return this.pluginManager.getRunningPlugins()
     }
     return []
+  }
+
+  /**
+   * 供开发者工具详情页按需校验当前项目的本地绑定状态。
+   */
+  private async validateDevProject(projectName: string): Promise<any> {
+    try {
+      console.log('[Plugins] 请求校验开发项目:', projectName)
+      const state = await this.readDevProjectState()
+      const normalizedProjectName = this.resolveDevProjectName(
+        projectName,
+        state.registry,
+        state.localBindings
+      )
+      if (!normalizedProjectName) {
+        return { success: false, error: '开发项目不存在' }
+      }
+
+      const validated = await this.validateAndRefreshDevProjectState(normalizedProjectName, state)
+      if (!validated.success) {
+        console.warn('[Plugins] 开发项目校验未通过:', {
+          projectName: normalizedProjectName,
+          error: validated.error
+        })
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+      console.log('[Plugins] 开发项目校验通过:', {
+        projectName: normalizedProjectName,
+        status: validated.binding?.status
+      })
+      return {
+        success: true,
+        pluginName: normalizedProjectName,
+        binding: validated.binding
+      }
+    } catch (error: unknown) {
+      console.error('[Plugins] 校验开发项目失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 从开发项目列表中移除指定项目，但保留磁盘工程目录。
+   */
+  private async removeDevProject(projectNameOrPath: string): Promise<any> {
+    try {
+      console.log('[Plugins] 请求删除开发项目:', projectNameOrPath)
+      const state = await this.readDevProjectState()
+      const normalizedProjectName = this.resolveDevProjectName(
+        projectNameOrPath,
+        state.registry,
+        state.localBindings,
+        this.readInstalledPlugins()
+      )
+      if (!normalizedProjectName) {
+        return { success: false, error: '开发项目不存在' }
+      }
+
+      const { [normalizedProjectName]: _removedProject, ...nextRegistryProjects } =
+        state.registry.projects
+      const { [normalizedProjectName]: _removedBinding, ...nextBindings } =
+        state.localBindings.bindings
+
+      this.writeDevProjectState(
+        {
+          ...state.registry,
+          projects: nextRegistryProjects
+        },
+        {
+          ...state.localBindings,
+          updatedAt: this.nowIso(),
+          bindings: nextBindings
+        }
+      )
+      this.removePluginUsageData(toDevPluginName(normalizedProjectName))
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发项目删除完成:', normalizedProjectName)
+      return { success: true, pluginName: normalizedProjectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] 删除开发项目失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 将开发项目显式安装为开发模式插件。
+   */
+  private async installDevPlugin(projectNameOrPath: string): Promise<any> {
+    try {
+      console.log('[Plugins] 请求安装开发模式:', projectNameOrPath)
+      const state = await this.readDevProjectState()
+      const projectName = this.resolveDevProjectName(
+        projectNameOrPath,
+        state.registry,
+        state.localBindings,
+        this.readInstalledPlugins()
+      )
+      if (!projectName) {
+        return { success: false, error: '开发项目不存在' }
+      }
+
+      const validated = await this.validateAndRefreshDevProjectState(projectName, state)
+      if (!validated.success || !validated.binding || !validated.pluginConfig) {
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+
+      const pluginConfig = validated.pluginConfig
+      if (!pluginConfig?.development?.main) {
+        return { success: false, error: 'plugin.json 缺少 development.main 字段' }
+      }
+      if (!validated.binding.projectPath) {
+        return { success: false, error: '开发项目未绑定有效路径' }
+      }
+
+      const plugins = this.readInstalledPlugins()
+      const devEffectiveName = toDevPluginName(projectName)
+      const validation = this.validatePluginConfig(
+        pluginConfig,
+        plugins.filter((p) => p?.name !== projectName && p?.name !== devEffectiveName)
+      )
+      if (!validation.valid) {
+        return { success: false, error: validation.error }
+      }
+
+      const projectPath = path.resolve(validated.binding.projectPath)
+      const installedPlugin = buildInstalledDevelopmentPlugin(projectPath, pluginConfig)
+      installedPlugin.logo = this.resolvePluginLogo(projectPath, pluginConfig.logo)
+      const effectiveDevName = installedPlugin.name // buildInstalledDevelopmentPlugin 已含 __dev
+      const existingIndex = plugins.findIndex(
+        (plugin) => plugin?.isDevelopment && plugin?.name === effectiveDevName
+      )
+      if (existingIndex >= 0) {
+        plugins[existingIndex] = installedPlugin
+      } else {
+        plugins.push(installedPlugin)
+      }
+
+      this.writeInstalledPlugins(plugins)
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发模式安装完成:', {
+        projectName,
+        projectPath,
+        developmentMain: pluginConfig.development.main
+      })
+      return { success: true, pluginName: projectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] 安装开发模式失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 将开发项目从开发模式中卸载，但保留开发项目登记与工程目录。
+   */
+  private async uninstallDevPlugin(projectNameOrPath: string): Promise<any> {
+    try {
+      console.log('[Plugins] 请求卸载开发模式:', projectNameOrPath)
+      const state = await this.readDevProjectState()
+      const plugins = this.readInstalledPlugins()
+      const projectName = this.resolveDevProjectName(
+        projectNameOrPath,
+        state.registry,
+        state.localBindings,
+        plugins
+      )
+      if (!projectName) {
+        return { success: true }
+      }
+
+      const devEffectiveName = toDevPluginName(projectName)
+      const pluginInfo = plugins.find(
+        (plugin) => plugin?.isDevelopment && plugin?.name === devEffectiveName
+      )
+      if (!pluginInfo?.isDevelopment) {
+        return { success: true }
+      }
+
+      if (typeof pluginInfo.path === 'string' && pluginInfo.path) {
+        this.pluginManager?.killPlugin(pluginInfo.path)
+      }
+      this.writeInstalledPlugins(
+        plugins.filter((plugin) => !(plugin?.isDevelopment && plugin?.name === devEffectiveName))
+      )
+      this.removePluginUsageData(toDevPluginName(projectName))
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发模式卸载完成:', projectName)
+      return { success: true, pluginName: projectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] 卸载开发模式失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 重新读取开发项目配置，并在已安装开发模式时同步刷新安装态快照。
+   */
+  private async reloadDevProject(projectName: string): Promise<any> {
+    try {
+      console.log('[Plugins] 请求重载开发项目:', projectName)
+      const state = await this.readDevProjectState()
+      const resolvedProjectName = this.resolveDevProjectName(
+        projectName,
+        state.registry,
+        state.localBindings,
+        this.readInstalledPlugins()
+      )
+      if (!resolvedProjectName) {
+        return { success: false, error: '开发项目不存在' }
+      }
+
+      const validated = await this.validateAndRefreshDevProjectState(resolvedProjectName, state)
+      if (!validated.success || !validated.binding || !validated.pluginConfig) {
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+      if (!validated.binding.projectPath) {
+        return { success: false, error: '开发项目未绑定有效路径' }
+      }
+
+      const plugins = this.readInstalledPlugins()
+      const devInstalledIndex = plugins.findIndex(
+        (plugin) => plugin?.isDevelopment && plugin?.name === resolvedProjectName
+      )
+      if (devInstalledIndex >= 0) {
+        const oldPlugin = plugins[devInstalledIndex]
+        const projectPath = path.resolve(validated.binding.projectPath)
+        plugins[devInstalledIndex] = {
+          ...oldPlugin,
+          ...buildInstalledDevelopmentPlugin(projectPath, validated.pluginConfig),
+          logo: this.resolvePluginLogo(projectPath, validated.pluginConfig.logo),
+          installedAt: oldPlugin.installedAt || this.nowIso()
+        }
+        this.writeInstalledPlugins(plugins)
+      }
+
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发项目重载完成:', {
+        projectName: resolvedProjectName,
+        installedDevMode: devInstalledIndex >= 0
+      })
+      return { success: true, pluginName: resolvedProjectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] 重载开发项目失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 为当前设备重新绑定 plugin.json，用于修复配置丢失、非法或未绑定状态。
+   */
+  private async selectDevProjectConfig(
+    projectName: string,
+    providedConfigPath?: string
+  ): Promise<any> {
+    try {
+      console.log('[Plugins] 请求重新绑定开发项目配置:', projectName)
+      const state = await this.readDevProjectState()
+      const registryItem = state.registry.projects[projectName]
+      if (!registryItem) {
+        return { success: false, error: '开发项目不存在' }
+      }
+
+      let configPath = providedConfigPath ? path.resolve(providedConfigPath) : ''
+
+      if (!configPath) {
+        const result = await dialog.showOpenDialog(this.mainWindow!, {
+          title: '选择 plugin.json',
+          properties: ['openFile'],
+          filters: [{ name: '插件配置', extensions: ['json'] }],
+          message: `为 ${projectName} 选择 plugin.json`
+        })
+        if (result.canceled || result.filePaths.length === 0) {
+          console.log('[Plugins] 重新绑定开发项目配置已取消:', projectName)
+          return { success: false, error: '未选择文件' }
+        }
+
+        configPath = path.resolve(result.filePaths[0])
+      }
+
+      if (path.basename(configPath) !== 'plugin.json') {
+        return { success: false, error: '请选择 plugin.json 文件' }
+      }
+
+      let selectedConfig: any
+      try {
+        selectedConfig = await this.readPluginConfigFromFile(configPath)
+      } catch {
+        return { success: false, error: 'plugin.json 格式错误' }
+      }
+
+      if (!validateRepairConfigSelection(registryItem, selectedConfig)) {
+        return {
+          success: false,
+          error: `选择的 plugin.json 与项目 "${projectName}" identity 不匹配`
+        }
+      }
+
+      const now = this.nowIso()
+      const nextLocalBindings: DevPluginLocalBindingsDoc = {
+        ...state.localBindings,
+        updatedAt: now,
+        bindings: {
+          ...state.localBindings.bindings,
+          [projectName]: {
+            name: projectName,
+            projectPath: path.dirname(configPath),
+            configPath,
+            status: 'ready',
+            lastValidatedAt: now,
+            updatedAt: now
+          }
+        }
+      }
+      const nextRegistry: DevPluginRegistryDoc = {
+        ...state.registry,
+        projects: {
+          ...state.registry.projects,
+          [projectName]: {
+            ...registryItem,
+            configSnapshot: { ...selectedConfig },
+            updatedAt: now
+          }
+        }
+      }
+
+      this.writeDevProjectState(nextRegistry, nextLocalBindings)
+      const validated = await this.validateAndRefreshDevProjectState(projectName, {
+        registry: nextRegistry,
+        localBindings: nextLocalBindings
+      })
+      if (!validated.success) {
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+
+      this.notifyPluginsChanged()
+      console.log('[Plugins] 开发项目配置已重新绑定:', {
+        projectName,
+        configPath
+      })
+      return { success: true, pluginName: projectName }
+    } catch (error: unknown) {
+      console.error('[Plugins] 重新选择开发项目配置失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '未知错误' }
+    }
+  }
+
+  /**
+   * 直接基于开发项目工程目录打包，不要求项目已经安装为开发模式。
+   */
+  private async packageDevProject(
+    projectName: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('[Plugins] 请求打包开发项目:', projectName)
+      const state = await this.readDevProjectState()
+      const resolvedProjectName = this.resolveDevProjectName(
+        projectName,
+        state.registry,
+        state.localBindings,
+        this.readInstalledPlugins()
+      )
+      if (!resolvedProjectName) {
+        return { success: false, error: '开发项目不存在' }
+      }
+
+      const validated = await this.validateAndRefreshDevProjectState(resolvedProjectName, state)
+      if (!validated.success || !validated.binding) {
+        return { success: false, error: validated.error || '开发项目校验失败' }
+      }
+      if (!canPackageDevProject(validated.binding)) {
+        return { success: false, error: '当前项目状态不可打包' }
+      }
+      if (!validated.binding.projectPath) {
+        return { success: false, error: '开发项目未绑定有效路径' }
+      }
+
+      const projectPath = validated.binding.projectPath
+      try {
+        await fs.access(projectPath)
+      } catch {
+        return { success: false, error: '插件目录不存在' }
+      }
+
+      const version =
+        validated.pluginConfig?.version ||
+        state.registry.projects[resolvedProjectName]?.configSnapshot?.version ||
+        '0.0.0'
+      const defaultName = `${resolvedProjectName}-v${version}.zpx`
+      const result = await dialog.showSaveDialog(this.mainWindow!, {
+        title: '保存插件包',
+        defaultPath: defaultName,
+        filters: [{ name: '插件包', extensions: ['zpx'] }]
+      })
+      if (result.canceled || !result.filePath) {
+        console.log('[Plugins] 开发项目打包已取消:', resolvedProjectName)
+        return { success: false, error: '已取消' }
+      }
+
+      await packZpx(projectPath, result.filePath)
+      shell.showItemInFolder(result.filePath)
+      console.log('[Plugins] 开发项目打包完成:', {
+        projectName: resolvedProjectName,
+        outputPath: result.filePath
+      })
+      return { success: true }
+    } catch (error: unknown) {
+      console.error('[Plugins] 打包开发项目失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : '打包失败' }
+    }
   }
 
   // 终止插件
@@ -1435,50 +2423,30 @@ export class PluginsAPI {
    */
   public async packagePlugin(pluginPath: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // 查找插件信息
-      const plugins: any = databaseAPI.dbGet('plugins')
-      if (!plugins || !Array.isArray(plugins)) {
-        return { success: false, error: '插件列表不存在' }
+      const plugins = this.readInstalledPlugins()
+      const normalizedPluginPath = path.resolve(pluginPath)
+      const pluginInfo = plugins.find(
+        (plugin) =>
+          typeof plugin.path === 'string' && path.resolve(plugin.path) === normalizedPluginPath
+      )
+      if (pluginInfo) {
+        if (!pluginInfo.isDevelopment) {
+          return { success: false, error: '仅支持打包开发中的插件' }
+        }
+        return this.packageDevProject(pluginInfo.name)
       }
 
-      const pluginInfo = plugins.find((p: any) => p.path === pluginPath)
-      if (!pluginInfo) {
+      const state = await this.readDevProjectState()
+      const projectName = this.resolveDevProjectName(
+        pluginPath,
+        state.registry,
+        state.localBindings,
+        plugins
+      )
+      if (!projectName) {
         return { success: false, error: '插件不存在' }
       }
-
-      if (!pluginInfo.isDevelopment) {
-        return { success: false, error: '仅支持打包开发中的插件' }
-      }
-
-      // 检查插件目录是否存在
-      try {
-        await fs.access(pluginPath)
-      } catch {
-        return { success: false, error: '插件目录不存在' }
-      }
-
-      // 默认文件名使用 .zpx 扩展名
-      const defaultName = `${pluginInfo.name}-v${pluginInfo.version}.zpx`
-
-      // 弹出保存对话框
-      const result = await dialog.showSaveDialog(this.mainWindow!, {
-        title: '保存插件包',
-        defaultPath: defaultName,
-        filters: [{ name: '插件包', extensions: ['zpx'] }]
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: '已取消' }
-      }
-
-      // 使用 zpxArchive 打包
-      await packZpx(pluginPath, result.filePath)
-
-      // 打开文件管理器并选中打包后的文件
-      shell.showItemInFolder(result.filePath)
-
-      console.log('[Plugins] 插件打包成功:', result.filePath)
-      return { success: true }
+      return this.packageDevProject(projectName)
     } catch (error: unknown) {
       console.error('[Plugins] 打包插件失败:', error)
       return { success: false, error: error instanceof Error ? error.message : '打包失败' }
@@ -1690,19 +2658,38 @@ export class PluginsAPI {
   }
 
   // 获取插件存储的数据库数据
-  private getPluginDbData(pluginName: string): { success: boolean; data?: any; error?: string } {
+  private getPluginDbData(pluginName: string): {
+    success: boolean
+    data?: any
+    error?: string
+  } {
     try {
-      // 获取以插件名为前缀的所有数据
-      const prefix = `PLUGIN/${pluginName}/`
+      if (pluginName === 'ZTOOLS') {
+        const allData = lmdbInstance.allDocs('ZTOOLS/')
+        return {
+          success: true,
+          data: allData.map((item: any) => ({
+            id: item._id.substring('ZTOOLS/'.length),
+            data: item.data,
+            rev: item._rev,
+            updatedAt: item.updatedAt || item._updatedAt
+          }))
+        }
+      }
+
+      if (!pluginName) {
+        return { success: false, error: '插件标识无效' }
+      }
+
+      const prefix = getPluginDataPrefix(pluginName)
       const allData = lmdbInstance.allDocs(prefix)
 
       if (!allData || allData.length === 0) {
         return { success: true, data: [] }
       }
 
-      // 过滤并格式化数据
       const formattedData = allData.map((item: any) => ({
-        id: item._id.substring(prefix.length), // 去除前缀
+        id: item._id.substring(prefix.length),
         data: item.data,
         rev: item._rev,
         updatedAt: item.updatedAt || item._updatedAt

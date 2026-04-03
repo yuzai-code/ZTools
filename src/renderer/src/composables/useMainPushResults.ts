@@ -15,27 +15,45 @@ export interface MainPushItem {
  * mainPush 分组结果（一个 feature 对应一组搜索结果）
  */
 export interface MainPushGroup {
-  featureKey: string // pluginPath:featureCode
+  /** 当前分组的唯一键，格式为 `pluginPath:featureCode`。 */
+  featureKey: string
+  /** 提供该结果分组的插件路径。 */
   pluginPath: string
+  /** 提供该结果分组的插件名称。 */
   pluginName: string
+  /** 插件 Logo。 */
   pluginLogo: string
+  /** 产生命中的功能编码。 */
   featureCode: string
+  /** 功能说明文案。 */
   featureExplain: string
+  /** 功能图标。 */
   featureIcon?: string
+  /** 当前分组命中的 cmd 类型。 */
   matchedCmdType: string
+  /** 插件返回的结果项集合。 */
   items: MainPushItem[]
+}
+
+/**
+ * mainPush 查询所依赖的输入状态。
+ */
+export interface UseMainPushResultsProps {
+  /** 当前搜索框文本。 */
+  searchQuery: string
+  /** 当前粘贴的图片内容。 */
+  pastedImage?: string | null
+  /** 当前粘贴的文件列表。 */
+  pastedFiles?: any[] | null
+  /** 当前粘贴的文本内容。 */
+  pastedText?: string | null
 }
 
 /**
  * mainPush 查询 composable
  * 监听搜索输入，自动查询匹配的 mainPush 插件获取动态结果
  */
-export function useMainPushResults(props: {
-  searchQuery: string
-  pastedImage?: string | null
-  pastedFiles?: any[] | null
-  pastedText?: string | null
-}): {
+export function useMainPushResults(props: UseMainPushResultsProps): {
   mainPushGroups: typeof mainPushGroups
   handleMainPushSelect: (
     group: MainPushGroup,
@@ -44,12 +62,17 @@ export function useMainPushResults(props: {
   ) => Promise<boolean>
 } {
   const commandDataStore = useCommandDataStore()
+  /** 当前搜索词对应的 mainPush 分组结果。 */
   const mainPushGroups = ref<MainPushGroup[]>([])
 
+  /** 防抖定时器，避免输入时频繁触发插件查询。 */
   let queryTimer: ReturnType<typeof setTimeout> | null = null
+  /** 查询版本号，用于丢弃过期的异步返回结果。 */
   let queryVersion = 0
 
-  // 查询 mainPush 插件
+  /**
+   * 查询所有命中的 mainPush 插件并整理为分组结果。
+   */
   async function queryMainPushPlugins(query: string): Promise<void> {
     const currentVersion = ++queryVersion
 
@@ -113,7 +136,9 @@ export function useMainPushResults(props: {
       }))
   }
 
-  // 监听搜索变化，带防抖
+  /**
+   * 监听搜索输入和粘贴状态变化，并以防抖方式刷新 mainPush 结果。
+   */
   watch(
     [
       () => props.searchQuery,

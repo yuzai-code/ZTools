@@ -4,6 +4,7 @@ import pluginWindowManager, { winIpc } from '../../core/pluginWindowManager.js'
 import windowManager from '../../managers/windowManager.js'
 import detachedWindowManager from '../../core/detachedWindowManager.js'
 import { registerPluginApiServices } from './pluginApiDispatcher'
+import { getPluginSessionPartition } from '../../../shared/pluginRuntimeNamespace'
 
 /**
  * 插件独立窗口管理API - 插件专用
@@ -46,6 +47,7 @@ export class PluginWindowAPI {
         const win = pluginWindowManager.createWindow(
           pluginInfo.path,
           pluginInfo.name,
+          getPluginSessionPartition(pluginInfo.name),
           url,
           options,
           event.sender
@@ -91,12 +93,12 @@ export class PluginWindowAPI {
         // 1. 先查主插件视图和分离窗口（pluginManager 管理）
         // 2. 再查子窗口（pluginWindowManager 管理，覆盖孙窗口嵌套场景）
         const callerInfo = pluginManager.getPluginInfoByWebContents(event.sender)
-        const callerName =
-          callerInfo?.name ?? pluginWindowManager.getPluginNameByWebContentsId(event.sender.id)
-        const ownerName = pluginWindowManager.getPluginNameByWindowId(id)
+        const callerPath =
+          callerInfo?.path ?? pluginWindowManager.getPluginPathByWebContentsId(event.sender.id)
+        const ownerPath = pluginWindowManager.getPluginPathByWindowId(id)
 
-        if (!callerName || callerName !== ownerName) {
-          console.warn(`[pluginWindow:auth] plugin=${callerName} denied access to winId=${id}`)
+        if (!callerPath || callerPath !== ownerPath) {
+          console.warn(`[pluginWindow:auth] pluginPath=${callerPath} denied access to winId=${id}`)
           event.returnValue = new Error('window id error')
           return
         }
@@ -141,12 +143,12 @@ export class PluginWindowAPI {
         // 1. 先查主插件视图和分离窗口（pluginManager 管理）
         // 2. 再查子窗口（pluginWindowManager 管理，覆盖孙窗口嵌套场景）
         const callerInfo = pluginManager.getPluginInfoByWebContents(event.sender)
-        const callerName =
-          callerInfo?.name ?? pluginWindowManager.getPluginNameByWebContentsId(event.sender.id)
-        const ownerName = pluginWindowManager.getPluginNameByWindowId(id)
+        const callerPath =
+          callerInfo?.path ?? pluginWindowManager.getPluginPathByWebContentsId(event.sender.id)
+        const ownerPath = pluginWindowManager.getPluginPathByWindowId(id)
 
-        if (!callerName || callerName !== ownerName) {
-          console.warn(`[pluginWindow:auth] plugin=${callerName} denied access to winId=${id}`)
+        if (!callerPath || callerPath !== ownerPath) {
+          console.warn(`[pluginWindow:auth] pluginPath=${callerPath} denied access to winId=${id}`)
           throw new Error('window id error')
         }
 

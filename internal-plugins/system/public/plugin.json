@@ -111,6 +111,12 @@
       "explain": "屏幕取色",
       "icon": "color-picker.png",
       "cmds": ["取色", "Color Picker", "屏幕取色"]
+    },
+    {
+      "code": "screenshot",
+      "explain": "截图并复制到剪贴板",
+      "icon": "screenshot.png",
+      "cmds": ["截图", "截屏", "Screenshot", "Screen Capture"]
     }
   ]
 }

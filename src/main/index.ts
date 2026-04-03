@@ -2,6 +2,7 @@ import { platform } from '@electron-toolkit/utils'
 import { app, BrowserWindow, session, webContents } from 'electron'
 import log from 'electron-log'
 import path from 'path'
+import lmdbInstance from './core/lmdb/lmdbInstance'
 import api from './api/index'
 import pluginsAPI from './api/renderer/plugins'
 import appWatcher from './appWatcher'
@@ -69,6 +70,18 @@ process.stderr?.on('error', (err) => {
   if (err.code === 'EPIPE') return
 })
 
+// ========== GPU 加速控制（必须在 app.ready 之前）==========
+// app.disableHardwareAcceleration() 只能在 app ready 之前生效，所以需要提前直接读数据库
+try {
+  const settingsDoc = lmdbInstance.get('ZTOOLS/settings-general')
+  if (settingsDoc?.data?.disableGpuAcceleration === true) {
+    app.disableHardwareAcceleration()
+    console.log('[Main] 已禁用 GPU 硬件加速（用户设置）')
+  }
+} catch {
+  // 读取失败时忽略，保持默认行为（GPU 加速开启）
+}
+
 // 配置 electron-log
 log.transports.file.level = 'debug'
 log.transports.file.maxSize = 5 * 1024 * 1024 // 5MB
@@ -97,10 +110,16 @@ if (process.env.NODE_ENV !== 'production') {
 // app.commandLine.appendSwitch('disable-web-security')
 
 // 导出函数供 API 使用
+/**
+ * 更新主窗口使用的全局唤起快捷键。
+ */
 export function updateShortcut(shortcut: string): boolean {
   return windowManager.registerShortcut(shortcut)
 }
 
+/**
+ * 读取当前已经生效的全局唤起快捷键。
+ */
 export function getCurrentShortcut(): string {
   return windowManager.getCurrentShortcut()
 }
@@ -145,15 +164,21 @@ app.whenReady().then(async () => {
       const autoStartPlugins = api.dbGet('autoStartPlugin')
       const disabledPlugins = pluginsAPI.getDisabledPluginSet()
       if (autoStartPlugins && Array.isArray(autoStartPlugins) && autoStartPlugins.length > 0) {
+        console.log('[Main] 开始处理自动启动插件:', { count: autoStartPlugins.length })
         const plugins = api.dbGet('plugins')
         if (plugins && Array.isArray(plugins)) {
-          for (const pluginName of autoStartPlugins) {
-            const plugin = plugins.find((p: any) => p.name === pluginName)
+          for (const pluginRef of autoStartPlugins) {
+            // pluginRef 可能是旧式 { pluginName, source } 或新式 string
+            const effectiveName =
+              typeof pluginRef === 'string' ? pluginRef : (pluginRef?.pluginName ?? '')
+            const plugin = plugins.find((p: any) => p?.name === effectiveName)
             if (plugin?.path && !disabledPlugins.has(plugin.path)) {
-              console.log('[Main] 自动启动插件:', pluginName)
+              console.log('[Main] 自动启动插件:', { pluginName: plugin.name })
               pluginManager.preloadPlugin(plugin.path).catch((error) => {
-                console.error('[Main] 自动启动插件失败:', pluginName, error)
+                console.error('[Main] 自动启动插件失败:', plugin.name, error)
               })
+            } else {
+              console.warn('[Main] 自动启动插件已跳过，未找到对应变体:', pluginRef)
             }
           }
         }
@@ -200,9 +225,11 @@ app.on('before-quit', (event) => {
     // 不是主动退出（如 Command+Q），阻止退出
     event.preventDefault()
     console.log('[Main] 阻止了 Command+Q 退出，请使用托盘菜单退出')
+    const hasActivePlugin = pluginManager.getCurrentPluginPath() !== null
     // 仅在 killPlugin 内置快捷键启用时才隐藏窗口；
     // 禁用时意味着用户希望把 Cmd+Q 用作其他用途（如呼出快捷键），保持窗口可见
-    if (windowManager.isKillPluginShortcutEnabled()) {
+    // 插件模式下的 Cmd+Q 由 pluginManager 负责终止插件并返回搜索页，这里不再隐藏主窗口
+    if (windowManager.isKillPluginShortcutEnabled() && !hasActivePlugin) {
       windowManager.hideWindow(false)
     }
   } else {

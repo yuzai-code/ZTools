@@ -9,6 +9,7 @@ const { success, error, confirm } = useToast()
 interface PluginData {
   pluginName: string
   pluginTitle?: string | null
+  isDevelopment: boolean
   docCount: number
   attachmentCount: number
   logo: string | null
@@ -26,12 +27,14 @@ const pluginDataList = ref<PluginData[]>([])
 const isLoaded = ref(false)
 
 // 获取插件显示名称（优先 title，回退到 name）
-function getDisplayName(data: PluginData | string): string {
-  if (typeof data === 'string') {
-    const found = pluginDataList.value.find((p) => p.pluginName === data)
-    return found?.pluginTitle || data
-  }
+function getDisplayName(data: Pick<PluginData, 'pluginName' | 'pluginTitle'> | null): string {
+  if (!data) return ''
   return data.pluginTitle || data.pluginName
+}
+
+// 生成列表 key
+function getPluginDataKey(data: PluginData): string {
+  return data.pluginName
 }
 
 const { value: searchQuery } = useZtoolsSubInput('', '搜索数据...')
@@ -39,12 +42,13 @@ const { value: searchQuery } = useZtoolsSubInput('', '搜索数据...')
 const filteredPluginDataList = computed(() =>
   weightedSearch(pluginDataList.value, searchQuery.value || '', [
     { value: (p) => getDisplayName(p), weight: 10 },
-    { value: (p) => p.pluginName || '', weight: 3 }
+    { value: (p) => p.pluginName || '', weight: 3 },
+    { value: (p) => (p.isDevelopment ? 'dev development 开发版' : 'installed 安装版'), weight: 1 }
   ])
 )
 
 const currentLevel = ref<PageLevel>('main') // 当前页面层级
-const currentPluginName = ref('')
+const currentPluginData = ref<PluginData | null>(null)
 const docKeys = ref<DocItem[]>([])
 const selectedDocKey = ref('')
 const currentDocContent = ref<any>(null)
@@ -62,6 +66,11 @@ const formattedDocContent = computed(() => {
   return JSON.stringify(currentDocContent.value, null, 2)
 })
 
+const currentPluginDetailTitle = computed(() => {
+  if (!currentPluginData.value) return '文档列表'
+  return `${getDisplayName(currentPluginData.value)}${currentPluginData.value.isDevelopment ? ' [DEV]' : ''} - 文档列表`
+})
+
 // 加载插件数据统计
 async function loadPluginData(): Promise<void> {
   try {
@@ -77,13 +86,13 @@ async function loadPluginData(): Promise<void> {
 }
 
 // 查看插件文档
-async function viewPluginDocs(pluginName: string): Promise<void> {
-  currentPluginName.value = pluginName
+async function viewPluginDocs(pluginData: PluginData): Promise<void> {
+  currentPluginData.value = pluginData
   docListAnimation.value = 'slide' // 从一级进入二级，用 slide（从右进入）
   currentLevel.value = 'docList'
 
   try {
-    const result = await window.ztools.internal.getPluginDocKeys(pluginName)
+    const result = await window.ztools.internal.getPluginDocKeys(pluginData.pluginName)
     if (result.success) {
       docKeys.value = result.data || []
     }
@@ -94,12 +103,17 @@ async function viewPluginDocs(pluginName: string): Promise<void> {
 
 // 查看文档内容
 async function viewDocContent(key: string): Promise<void> {
+  if (!currentPluginData.value) return
+
   selectedDocKey.value = key
   docListAnimation.value = 'slide-reverse' // 进入三级，二级要向左离开
   currentLevel.value = 'docDetail'
 
   try {
-    const result = await window.ztools.internal.getPluginDoc(currentPluginName.value, key)
+    const result = await window.ztools.internal.getPluginDoc(
+      currentPluginData.value.pluginName,
+      key
+    )
     if (result.success) {
       currentDocContent.value = result.data
       currentDocType.value = result.type || 'document'
@@ -113,7 +127,7 @@ async function viewDocContent(key: string): Promise<void> {
 function closeDocListModal(): void {
   docListAnimation.value = 'slide' // 返回一级，用 slide（向右离开）
   currentLevel.value = 'main'
-  currentPluginName.value = ''
+  currentPluginData.value = null
   docKeys.value = []
   selectedDocKey.value = ''
 }
@@ -128,10 +142,10 @@ function closeDocDetailModal(): void {
 
 // 清空插件数据
 async function handleClearData(): Promise<void> {
-  if (!currentPluginName.value) return
+  if (!currentPluginData.value) return
 
   // 禁止清空主程序数据
-  if (currentPluginName.value === 'ZTOOLS') {
+  if (currentPluginData.value.pluginName === 'ZTOOLS') {
     error('无法清空主程序数据，这可能导致应用异常')
     return
   }
@@ -139,7 +153,7 @@ async function handleClearData(): Promise<void> {
   // 确认操作
   const confirmed = await confirm({
     title: '清空数据',
-    message: `确定要清空插件"${getDisplayName(currentPluginName.value)}"的所有数据吗？\n\n此操作将删除该插件的所有文档，无法恢复。`,
+    message: `确定要清空插件"${getDisplayName(currentPluginData.value)}"${currentPluginData.value.isDevelopment ? '（DEV）' : ''}的所有数据吗？\n\n此操作将删除该插件变体的所有文档，无法恢复。`,
     type: 'danger',
     confirmText: '清空',
     cancelText: '取消'
@@ -147,7 +161,7 @@ async function handleClearData(): Promise<void> {
   if (!confirmed) return
 
   try {
-    const result = await window.ztools.internal.clearPluginData(currentPluginName.value)
+    const result = await window.ztools.internal.clearPluginData(currentPluginData.value.pluginName)
     if (result.success) {
       success(`已成功清空 ${result.deletedCount} 个文档`)
       // 关闭弹窗
@@ -170,7 +184,7 @@ async function handleExportAllData(): Promise<void> {
   if (isExportingAll.value) return
   isExportingAll.value = true
   try {
-    const result = await (window.ztools.internal as any).exportAllData()
+    const result = await window.ztools.internal.exportAllData()
     if (result.success) {
       success('全部数据已导出到下载目录')
     } else {
@@ -226,10 +240,10 @@ onUnmounted(() => {
         <div v-else-if="isLoaded && filteredPluginDataList.length > 0" class="plugin-list">
           <div
             v-for="pluginData in filteredPluginDataList"
-            :key="pluginData.pluginName"
+            :key="getPluginDataKey(pluginData)"
             class="card plugin-card"
             :class="{ 'ztools-card': pluginData.pluginName === 'ZTOOLS' }"
-            @click="viewPluginDocs(pluginData.pluginName)"
+            @click="viewPluginDocs(pluginData)"
           >
             <!-- 主程序特殊图标 -->
             <div
@@ -252,7 +266,8 @@ onUnmounted(() => {
 
             <div class="plugin-info">
               <h3 class="plugin-name">
-                {{ getDisplayName(pluginData) }}
+                <span>{{ getDisplayName(pluginData) }}</span>
+                <span v-if="pluginData.isDevelopment" class="plugin-dev-tag">DEV</span>
               </h3>
               <span class="doc-count"
                 >{{ pluginData.docCount }} 个文档 / {{ pluginData.attachmentCount }} 个附件</span
@@ -270,11 +285,11 @@ onUnmounted(() => {
     <!-- 二级页面：文档列表 -->
     <DetailPanel
       v-show="currentLevel === 'docList'"
-      :title="`${getDisplayName(currentPluginName)} - 文档列表`"
+      :title="currentPluginDetailTitle"
       :class="docListAnimationClass"
       @back="closeDocListModal"
     >
-      <div v-if="currentPluginName !== 'ZTOOLS'" class="detail-header-actions">
+      <div v-if="currentPluginData?.pluginName !== 'ZTOOLS'" class="detail-header-actions">
         <button class="btn btn-danger" @click="handleClearData">
           <div class="i-z-trash font-size-16px" />
           <span>清空所有数据</span>
@@ -482,10 +497,24 @@ onUnmounted(() => {
 }
 
 .plugin-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-color);
   margin-bottom: 4px;
+}
+
+.plugin-dev-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--purple-color);
+  background: var(--purple-light-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--purple-border);
 }
 
 .doc-count {

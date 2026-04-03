@@ -62,11 +62,28 @@ const isAutoKill = ref(false)
 const isAutoDetach = ref(false)
 const isAutoStart = ref(false)
 
+// 当前详情页插件的有效名称（已包含 __dev 后缀）
+const currentPluginName = computed(() => props.plugin.name || null)
+
+/** 解析配置列表，兼容旧式 { pluginName, source } 和新式 string */
+function normalizeConfigList(data: unknown): string[] {
+  if (!Array.isArray(data)) return []
+  return data
+    .map((item) => (typeof item === 'string' ? item : (item?.pluginName ?? '')))
+    .filter(Boolean)
+}
+
+/** 切换字符串列表中的某项 */
+function toggleInList(list: string[], name: string): string[] {
+  return list.includes(name) ? list.filter((n) => n !== name) : [...list, name]
+}
+
 // 点击外部关闭下拉菜单
 function handleClickOutside(): void {
   showSettingsDropdown.value = false
 }
 
+// 切换插件设置菜单展开状态
 function toggleSettingsDropdown(): void {
   showSettingsDropdown.value = !showSettingsDropdown.value
 }
@@ -77,8 +94,8 @@ async function loadPluginSettings(): Promise<void> {
 
   try {
     const killData = await window.ztools.internal.dbGet('outKillPlugin')
-    if (Array.isArray(killData)) {
-      isAutoKill.value = killData.includes(props.plugin.name)
+    if (Array.isArray(killData) && currentPluginName.value) {
+      isAutoKill.value = normalizeConfigList(killData).includes(currentPluginName.value)
     }
   } catch (error) {
     console.debug('未找到 outKillPlugin 配置', error)
@@ -86,8 +103,8 @@ async function loadPluginSettings(): Promise<void> {
 
   try {
     const detachData = await window.ztools.internal.dbGet('autoDetachPlugin')
-    if (Array.isArray(detachData)) {
-      isAutoDetach.value = detachData.includes(props.plugin.name)
+    if (Array.isArray(detachData) && currentPluginName.value) {
+      isAutoDetach.value = normalizeConfigList(detachData).includes(currentPluginName.value)
     }
   } catch (error) {
     console.debug('未找到 autoDetachPlugin 配置', error)
@@ -95,8 +112,8 @@ async function loadPluginSettings(): Promise<void> {
 
   try {
     const startData = await window.ztools.internal.dbGet('autoStartPlugin')
-    if (Array.isArray(startData)) {
-      isAutoStart.value = startData.includes(props.plugin.name)
+    if (Array.isArray(startData) && currentPluginName.value) {
+      isAutoStart.value = normalizeConfigList(startData).includes(currentPluginName.value)
     }
   } catch (error) {
     console.debug('未找到 autoStartPlugin 配置', error)
@@ -105,71 +122,53 @@ async function loadPluginSettings(): Promise<void> {
 
 // 切换「退出即结束」
 async function toggleAutoKill(): Promise<void> {
-  if (!props.plugin.name) return
+  if (!currentPluginName.value) return
 
   let list: string[] = []
   try {
     const data = await window.ztools.internal.dbGet('outKillPlugin')
-    if (Array.isArray(data)) list = data
+    list = normalizeConfigList(data)
   } catch {
     // ignore
   }
 
-  const index = list.indexOf(props.plugin.name)
-  if (index >= 0) {
-    list.splice(index, 1)
-  } else {
-    list.push(props.plugin.name)
-  }
-
+  list = toggleInList(list, currentPluginName.value)
   await window.ztools.internal.dbPut('outKillPlugin', list)
-  isAutoKill.value = list.includes(props.plugin.name)
+  isAutoKill.value = list.includes(currentPluginName.value)
 }
 
 // 切换「自动分离窗口」
 async function toggleAutoDetach(): Promise<void> {
-  if (!props.plugin.name) return
+  if (!currentPluginName.value) return
 
   let list: string[] = []
   try {
     const data = await window.ztools.internal.dbGet('autoDetachPlugin')
-    if (Array.isArray(data)) list = data
+    list = normalizeConfigList(data)
   } catch {
     // ignore
   }
 
-  const index = list.indexOf(props.plugin.name)
-  if (index >= 0) {
-    list.splice(index, 1)
-  } else {
-    list.push(props.plugin.name)
-  }
-
+  list = toggleInList(list, currentPluginName.value)
   await window.ztools.internal.dbPut('autoDetachPlugin', list)
-  isAutoDetach.value = list.includes(props.plugin.name)
+  isAutoDetach.value = list.includes(currentPluginName.value)
 }
 
 // 切换「跟随主程序同时启动运行」
 async function toggleAutoStart(): Promise<void> {
-  if (!props.plugin.name) return
+  if (!currentPluginName.value) return
 
   let list: string[] = []
   try {
     const data = await window.ztools.internal.dbGet('autoStartPlugin')
-    if (Array.isArray(data)) list = data
+    list = normalizeConfigList(data)
   } catch {
     // ignore
   }
 
-  const index = list.indexOf(props.plugin.name)
-  if (index >= 0) {
-    list.splice(index, 1)
-  } else {
-    list.push(props.plugin.name)
-  }
-
+  list = toggleInList(list, currentPluginName.value)
   await window.ztools.internal.dbPut('autoStartPlugin', list)
-  isAutoStart.value = list.includes(props.plugin.name)
+  isAutoStart.value = list.includes(currentPluginName.value)
 }
 
 function handleDisabledToggle(event: Event): void {
@@ -287,7 +286,7 @@ async function loadReadme(): Promise<void> {
 
 // 加载插件数据（文档和附件列表）
 async function loadPluginData(): Promise<void> {
-  if (!props.plugin.name) {
+  if (!props.plugin.name || !currentPluginName.value) {
     dataError.value = '插件名称不存在'
     return
   }
@@ -296,7 +295,7 @@ async function loadPluginData(): Promise<void> {
   dataError.value = ''
 
   try {
-    const result = await window.ztools.internal.getPluginDocKeys(props.plugin.name)
+    const result = await window.ztools.internal.getPluginDocKeys(currentPluginName.value)
     if (result.success) {
       docKeys.value = result.data || []
     } else {
@@ -312,7 +311,7 @@ async function loadPluginData(): Promise<void> {
 
 // 清除插件全部数据
 async function handleClearAllData(): Promise<void> {
-  if (!props.plugin.name || isClearing.value) return
+  if (!props.plugin.name || !currentPluginName.value || isClearing.value) return
 
   // 确认弹窗，说明危险性
   const confirmed = await confirm({
@@ -327,7 +326,7 @@ async function handleClearAllData(): Promise<void> {
 
   isClearing.value = true
   try {
-    const result = await window.ztools.internal.clearPluginData(props.plugin.name)
+    const result = await window.ztools.internal.clearPluginData(currentPluginName.value)
     if (result.success) {
       success('插件数据已清除')
       // 清空当前展开的数据
@@ -348,11 +347,11 @@ async function handleClearAllData(): Promise<void> {
 
 // 导出插件全部数据
 async function handleExportAllData(): Promise<void> {
-  if (!props.plugin.name || isExporting.value) return
+  if (!props.plugin.name || !currentPluginName.value || isExporting.value) return
 
   isExporting.value = true
   try {
-    const result = await (window.ztools.internal as any).exportPluginData(props.plugin.name)
+    const result = await window.ztools.internal.exportPluginData(currentPluginName.value)
     if (result.success) {
       success('数据已导出到下载目录')
     } else {
@@ -429,6 +428,8 @@ function normalizeCommand(cmd: any): any {
 
 // 切换数据详情展开状态
 async function toggleDataDetail(item: DocItem): Promise<void> {
+  if (!currentPluginName.value) return
+
   // 如果点击的是已展开的项，则收起
   if (expandedDataId.value === item.key) {
     expandedDataId.value = ''
@@ -441,7 +442,7 @@ async function toggleDataDetail(item: DocItem): Promise<void> {
   currentDocType.value = item.type
 
   try {
-    const result = await window.ztools.internal.getPluginDoc(props.plugin.name, item.key)
+    const result = await window.ztools.internal.getPluginDoc(currentPluginName.value, item.key)
     if (result.success) {
       currentDocContent.value = result.data
       currentDocType.value = result.type || 'document'

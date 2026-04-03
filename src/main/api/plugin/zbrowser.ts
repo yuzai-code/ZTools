@@ -45,8 +45,13 @@ export class ZBrowserAPI {
         if (!pluginInfo) throw new Error('plugin not found')
 
         const executor = new ZBrowserExecutor()
+        console.log('[zbrowser] 插件名:', {
+          pluginName: pluginInfo.name,
+          pluginPath: pluginInfo.path
+        })
         return await executor.run({
           pluginName: pluginInfo.name,
+          runtimeNamespace: pluginInfo.name,
           pluginLogo: pluginInfo.logo || '',
           ubrowserId,
           options: (options || {}) as any,

@@ -58,6 +58,7 @@ const api = {
   setPluginDisabled: (pluginPath: string, disabled: boolean) =>
     ipcRenderer.invoke('set-plugin-disabled', pluginPath, disabled),
   importPlugin: () => ipcRenderer.invoke('import-plugin'),
+  // 导入开发中的插件工程，可选直接传入 plugin.json 路径
   importDevPlugin: (pluginJsonPath?: string) =>
     ipcRenderer.invoke('import-dev-plugin', pluginJsonPath),
   fetchPluginMarket: () => ipcRenderer.invoke('fetch-plugin-market'),
@@ -484,6 +485,7 @@ declare global {
         disabled: boolean
       ) => Promise<{ success: boolean; error?: string }>
       importPlugin: () => Promise<{ success: boolean; error?: string }>
+      // 导入开发中的插件工程，可选直接传入 plugin.json 路径
       importDevPlugin: (pluginJsonPath?: string) => Promise<{ success: boolean; error?: string }>
       fetchPluginMarket: () => Promise<{ success: boolean; data?: any; error?: string }>
       installPluginFromMarket: (plugin: any) => Promise<{
@@ -607,6 +609,8 @@ declare global {
         success: boolean
         data?: Array<{
           pluginName: string
+          pluginTitle?: string | null
+          isDevelopment: boolean
           docCount: number
           attachmentCount: number
           logo: string | null

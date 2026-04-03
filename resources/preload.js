@@ -657,8 +657,8 @@ window.ztools = {
   readCurrentFolderPath: () => electron.ipcRenderer.invoke('plugin:read-current-folder-path'),
   // 读取当前浏览器窗口 URL（前提当前活动系统窗口是受支持浏览器）
   readCurrentBrowserUrl: () => electron.ipcRenderer.invoke('plugin:read-current-browser-url'),
-  // 获取文件系统图标（返回 base64 Data URL）
-  getFileIcon: (filePath) => electron.ipcRenderer.invoke('get-file-icon', filePath),
+  // 获取文件系统图标（返回 base64 Data URL，同步）
+  getFileIcon: (filePath) => electron.ipcRenderer.sendSync('get-file-icon', filePath),
   // 插件跳转
   redirect: (label, payload) =>
     electron.ipcRenderer.sendSync('ztools-redirect', { label, payload }),
@@ -789,7 +789,12 @@ window.ztools = {
     quitApp: async () => await electron.ipcRenderer.invoke('internal:quit-app'),
 
     // ==================== 指令管理 API ====================
+    // 返回设置插件使用的原始指令快照，用于构建 alias 可选目标列表。
+    // 这里返回的是主进程整理后的 canonical commands，不包含主窗口搜索阶段注入的 alias 搜索字段。
     getCommands: async () => await electron.ipcRenderer.invoke('internal:get-commands'),
+    // 保存完整 alias store。主进程会负责归一化、持久化，并触发 commands cache 失效与主窗口刷新。
+    updateCommandAliases: async (aliases) =>
+      await electron.ipcRenderer.invoke('internal:update-command-aliases', aliases),
 
     // ==================== 本地启动管理 API ====================
     localShortcuts: {
@@ -812,12 +817,38 @@ window.ztools = {
     getAllPlugins: async () => await electron.ipcRenderer.invoke('internal:get-all-plugins'),
     selectPluginFile: async () => await electron.ipcRenderer.invoke('internal:select-plugin-file'),
     importPlugin: async () => await electron.ipcRenderer.invoke('internal:import-plugin'),
+    getDevProjects: async () => await electron.ipcRenderer.invoke('internal:get-dev-projects'),
+    updateDevProjectsOrder: async (pluginNames) =>
+      await electron.ipcRenderer.invoke('internal:update-dev-projects-order', pluginNames),
     readPluginInfoFromZpx: async (zpxPath) =>
       await electron.ipcRenderer.invoke('internal:read-plugin-info-from-zpx', zpxPath),
     installPluginFromPath: async (zpxPath) =>
       await electron.ipcRenderer.invoke('internal:install-plugin-from-path', zpxPath),
     importDevPlugin: async (pluginPath) =>
       await electron.ipcRenderer.invoke('internal:import-dev-plugin', pluginPath),
+    upsertDevProjectByConfigPath: async (pluginJsonPath) =>
+      await electron.ipcRenderer.invoke(
+        'internal:upsert-dev-project-by-config-path',
+        pluginJsonPath
+      ),
+    removeDevProject: async (pluginName) =>
+      await electron.ipcRenderer.invoke('internal:remove-dev-project', pluginName),
+    installDevPlugin: async (pluginPath) =>
+      await electron.ipcRenderer.invoke('internal:install-dev-plugin', pluginPath),
+    uninstallDevPlugin: async (pluginPath) =>
+      await electron.ipcRenderer.invoke('internal:uninstall-dev-plugin', pluginPath),
+    validateDevProject: async (pluginName) =>
+      await electron.ipcRenderer.invoke('internal:validate-dev-project', pluginName),
+    reloadDevProject: async (pluginName) =>
+      await electron.ipcRenderer.invoke('internal:reload-dev-project', pluginName),
+    selectDevProjectConfig: async (pluginName, configPath) =>
+      await electron.ipcRenderer.invoke(
+        'internal:select-dev-project-config',
+        pluginName,
+        configPath
+      ),
+    packageDevProject: async (pluginName) =>
+      await electron.ipcRenderer.invoke('internal:package-dev-project', pluginName),
     deletePlugin: async (pluginPath) =>
       await electron.ipcRenderer.invoke('internal:delete-plugin', pluginPath),
     reloadPlugin: async (pluginPath) =>
@@ -834,16 +865,16 @@ window.ztools = {
       await electron.ipcRenderer.invoke('internal:install-plugin-from-npm', options),
     getPluginReadme: async (pluginPathOrName, pluginName) =>
       await electron.ipcRenderer.invoke('internal:get-plugin-readme', pluginPathOrName, pluginName),
-    getPluginDocKeys: async (pluginPath) =>
-      await electron.ipcRenderer.invoke('internal:get-plugin-doc-keys', pluginPath),
-    getPluginDoc: async (pluginPath, docKey) =>
-      await electron.ipcRenderer.invoke('internal:get-plugin-doc', pluginPath, docKey),
+    getPluginDocKeys: async (pluginRef) =>
+      await electron.ipcRenderer.invoke('internal:get-plugin-doc-keys', pluginRef),
+    getPluginDoc: async (pluginRef, docKey) =>
+      await electron.ipcRenderer.invoke('internal:get-plugin-doc', pluginRef, docKey),
     getPluginDataStats: async () =>
       await electron.ipcRenderer.invoke('internal:get-plugin-data-stats'),
-    clearPluginData: async (pluginName) =>
-      await electron.ipcRenderer.invoke('internal:clear-plugin-data', pluginName),
-    exportPluginData: async (pluginName) =>
-      await electron.ipcRenderer.invoke('internal:export-plugin-data', pluginName),
+    clearPluginData: async (pluginRef) =>
+      await electron.ipcRenderer.invoke('internal:clear-plugin-data', pluginRef),
+    exportPluginData: async (pluginRef) =>
+      await electron.ipcRenderer.invoke('internal:export-plugin-data', pluginRef),
     exportAllData: async () => await electron.ipcRenderer.invoke('internal:export-all-data'),
     packagePlugin: async (pluginPath) =>
       await electron.ipcRenderer.invoke('internal:package-plugin', pluginPath),

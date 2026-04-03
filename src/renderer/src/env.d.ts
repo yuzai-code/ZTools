@@ -80,7 +80,9 @@ declare global {
         disabled: boolean
       ) => Promise<{ success: boolean; error?: string }>
       importPlugin: () => Promise<{ success: boolean; error?: string }>
-      importDevPlugin: () => Promise<{ success: boolean; error?: string }>
+      // 导入开发中的插件工程，可选直接传入 plugin.json 路径
+      importDevPlugin: (pluginJsonPath?: string) => Promise<{ success: boolean; error?: string }>
+      removeDevProject: (pluginName: string) => Promise<{ success: boolean; error?: string }>
       fetchPluginMarket: () => Promise<{
         success: boolean
         data?: any
@@ -214,6 +216,8 @@ declare global {
         success: boolean
         data?: Array<{
           pluginName: string
+          pluginTitle?: string | null
+          isDevelopment: boolean
           docCount: number
           attachmentCount: number
           logo: string | null

@@ -1046,16 +1046,18 @@ export class ZBrowserExecutor {
    */
   async run(params: {
     pluginName: string
+    runtimeNamespace: string
     pluginLogo: string
     ubrowserId?: number
     options: ZBrowserRunOptions
     queue: ZBrowserQueueItem[]
     idleWindowIds: number[]
   }): Promise<ZBrowserRunResult> {
-    const { pluginName, pluginLogo, ubrowserId, options, queue, idleWindowIds } = params
+    const { pluginName, runtimeNamespace, pluginLogo, ubrowserId, options, queue, idleWindowIds } =
+      params
 
     console.log(
-      `[zbrowser] 开始执行: pluginName="${pluginName}", ` +
+      `[zbrowser] 开始执行: pluginName="${pluginName}", runtimeNamespace="${runtimeNamespace}", ` +
         `队列长度=${queue.length}, ` +
         `模式=${ubrowserId ? '复用窗口#' + ubrowserId : '新建窗口'}`
     )
@@ -1073,11 +1075,16 @@ export class ZBrowserExecutor {
         }
         this._browserWindow = win
         // 从空闲池移除（正在使用中）
-        zbrowserManager.removeIdleWindow(pluginName, ubrowserId)
+        zbrowserManager.removeIdleWindow(runtimeNamespace, ubrowserId)
         console.log(`[zbrowser] 复用空闲窗口: windowId=${ubrowserId}`)
       } else {
         // 新建窗口模式
-        this._browserWindow = this.createBrowserWindow(pluginName, pluginLogo, options)
+        this._browserWindow = this.createBrowserWindow(
+          runtimeNamespace,
+          pluginName,
+          pluginLogo,
+          options
+        )
         console.log(`[zbrowser] 新建窗口: windowId=${this._browserWindow.id}`)
       }
 
@@ -1090,7 +1097,7 @@ export class ZBrowserExecutor {
       const result = await this.forkAndExecute(queue)
 
       // 运行结束后处理窗口
-      this.handleWindowAfterRun(pluginName)
+      this.handleWindowAfterRun(runtimeNamespace)
 
       // 可见窗口加入空闲池后，返回窗口信息供后续复用
       if (this._browserWindow && !this._browserWindow.isDestroyed()) {
@@ -1126,11 +1133,12 @@ export class ZBrowserExecutor {
    * 使用插件专属 zbrowser Session，严格过滤允许的窗口选项。
    */
   private createBrowserWindow(
+    runtimeNamespace: string,
     pluginName: string,
     pluginLogo: string,
     options: ZBrowserRunOptions
   ): BrowserWindow {
-    const sess = zbrowserManager.getOrCreateSession(pluginName)
+    const sess = zbrowserManager.getOrCreateSession(runtimeNamespace, pluginName)
 
     // 窗口选项白名单过滤
     const winOptions: Electron.BrowserWindowConstructorOptions = {
@@ -1329,18 +1337,18 @@ export class ZBrowserExecutor {
   /**
    * 运行结束后处理窗口：可见窗口加入空闲池，不可见窗口销毁
    */
-  private handleWindowAfterRun(pluginName: string): void {
+  private handleWindowAfterRun(runtimeNamespace: string): void {
     if (!this._browserWindow || this._browserWindow.isDestroyed()) return
 
     if (this._browserWindow.isVisible()) {
       // 可见窗口 → 加入空闲池
-      zbrowserManager.addIdleWindow(pluginName, this._browserWindow.id)
+      zbrowserManager.addIdleWindow(runtimeNamespace, this._browserWindow.id)
       console.log(`[zbrowser] 窗口保留为空闲: windowId=${this._browserWindow.id}`)
 
       // 监听窗口关闭事件，自动从空闲池移除
       const windowId = this._browserWindow.id
       this._browserWindow.once('closed', () => {
-        zbrowserManager.removeIdleWindow(pluginName, windowId)
+        zbrowserManager.removeIdleWindow(runtimeNamespace, windowId)
         devToolsShortcut.unregister()
       })
     } else {

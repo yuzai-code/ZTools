@@ -125,6 +125,33 @@ const { mainPushGroups, handleMainPushSelect } = useMainPushResults(props)
 const scrollContainerRef = ref<HTMLElement>()
 const showRecentInSearch = computed(() => windowStore.showRecentInSearch)
 
+// 展示设置插件详情页面对应小项的 payload
+type PluginPayload = { pluginName: string; path?: string }
+
+/**
+ * 从搜索结果项中提取插件名称载荷。
+ */
+function getPluginPayload(app: any): PluginPayload | null {
+  if (!app?.pluginName) {
+    return null
+  }
+  return { pluginName: app.pluginName, path: app.path }
+}
+
+/**
+ * 解析右键菜单回传的插件载荷。
+ */
+function parsePluginPayload(raw: string): PluginPayload | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed?.pluginName) return null
+    return { pluginName: parsed.pluginName, path: parsed.path }
+  } catch {
+    return typeof raw === 'string' && raw ? { pluginName: raw } : null
+  }
+}
+
 // 是否有搜索内容
 
 const hasSearchContent = computed(() => {
@@ -464,7 +491,11 @@ async function handleAppContextMenu(
   // 只在历史记录中显示"从使用记录删除"
   if (!fromSearch && !fromPinned) {
     menuItems.push({
-      id: `remove-from-history:${JSON.stringify({ path: app.path, featureCode: app.featureCode, name: app.name })}`,
+      id: `remove-from-history:${JSON.stringify({
+        path: app.path,
+        featureCode: app.featureCode,
+        name: app.pluginName || app.name
+      })}`,
       label: '从使用记录删除'
     })
   }
@@ -489,9 +520,13 @@ async function handleAppContextMenu(
   }
 
   // 根据是否已固定显示不同选项
-  if (isPinned(app.path, app.featureCode, app.name)) {
+  if (isPinned(app.path, app.featureCode, app.pluginName || app.name)) {
     menuItems.push({
-      id: `unpin-app:${JSON.stringify({ path: app.path, featureCode: app.featureCode, name: app.name })}`,
+      id: `unpin-app:${JSON.stringify({
+        path: app.path,
+        featureCode: app.featureCode,
+        name: app.pluginName || app.name
+      })}`,
       label: '从搜索框取消固定'
     })
   } else {
@@ -541,29 +576,34 @@ async function handleAppContextMenu(
       const killData = await window.ztools.dbGet('outKillPlugin')
       if (killData && Array.isArray(killData)) {
         outKillPlugins = killData
+          .map((item: any) => (typeof item === 'string' ? item : (item?.pluginName ?? '')))
+          .filter(Boolean)
       }
       const detachData = await window.ztools.dbGet('autoDetachPlugin')
       if (detachData && Array.isArray(detachData)) {
         autoDetachPlugins = detachData
+          .map((item: any) => (typeof item === 'string' ? item : (item?.pluginName ?? '')))
+          .filter(Boolean)
       }
     } catch (error) {
       console.log('读取配置失败:', error)
     }
 
-    const isAutoKill = outKillPlugins.includes(app.pluginName)
-    const isAutoDetach = autoDetachPlugins.includes(app.pluginName)
+    const pluginPayload = getPluginPayload(app)
+    const isAutoKill = !!pluginPayload && outKillPlugins.includes(pluginPayload.pluginName)
+    const isAutoDetach = !!pluginPayload && autoDetachPlugins.includes(pluginPayload.pluginName)
 
     menuItems.push({
       label: '插件设置',
       submenu: [
         {
-          id: `toggle-auto-kill:${app.pluginName}`,
+          id: `toggle-auto-kill:${JSON.stringify(pluginPayload)}`,
           label: '退出到后台立即结束运行',
           type: 'checkbox',
           checked: isAutoKill
         },
         {
-          id: `toggle-auto-detach:${app.pluginName}`,
+          id: `toggle-auto-detach:${JSON.stringify(pluginPayload)}`,
           label: '自动分离为独立窗口',
           type: 'checkbox',
           checked: isAutoDetach
@@ -572,7 +612,7 @@ async function handleAppContextMenu(
     })
 
     menuItems.push({
-      id: `view-plugin-detail:${app.pluginName}`,
+      id: `view-plugin-detail:${JSON.stringify(pluginPayload)}`,
       label: '查看插件详情'
     })
   }
@@ -840,32 +880,35 @@ async function handleContextMenuCommand(command: string): Promise<void> {
       console.error('管理员启动失败:', error)
     }
   } else if (command.startsWith('toggle-auto-kill:')) {
-    const pluginName = command.replace('toggle-auto-kill:', '')
+    const pluginPayload = parsePluginPayload(command.replace('toggle-auto-kill:', ''))
     try {
       let outKillPlugins: string[] = []
       try {
         const data = await window.ztools.dbGet('outKillPlugin')
         if (data && Array.isArray(data)) {
           outKillPlugins = data
+            .map((item: any) => (typeof item === 'string' ? item : (item?.pluginName ?? '')))
+            .filter(Boolean)
         }
       } catch (error) {
-        console.debug('未找到outKillPlugin配置', error)
+        console.debug('未找outKillPlugin配置', error)
       }
 
-      const index = outKillPlugins.indexOf(pluginName)
-      if (index !== -1) {
-        outKillPlugins.splice(index, 1)
-      } else {
-        outKillPlugins.push(pluginName)
+      if (!pluginPayload) {
+        return
       }
 
+      const { pluginName } = pluginPayload
+      outKillPlugins = outKillPlugins.includes(pluginName)
+        ? outKillPlugins.filter((n) => n !== pluginName)
+        : [...outKillPlugins, pluginName]
       await window.ztools.dbPut('outKillPlugin', outKillPlugins)
       console.log('已更新 outKillPlugin 配置:', outKillPlugins)
     } catch (error: any) {
       console.error('切换自动结束配置失败:', error)
     }
   } else if (command.startsWith('view-plugin-detail:')) {
-    const pluginName = command.replace('view-plugin-detail:', '')
+    const pluginPayload = parsePluginPayload(command.replace('view-plugin-detail:', ''))
     try {
       // 从 commandDataStore 中查找设置插件（已安装插件功能）的路径
       const settingCmd = commandDataStore.commands.find(
@@ -882,7 +925,7 @@ async function handleContextMenuCommand(command: string): Promise<void> {
           name: '已安装插件',
           cmdType: 'text',
           param: {
-            payload: pluginName,
+            payload: pluginPayload ? pluginPayload.pluginName : '',
             type: 'text'
           }
         })
@@ -893,25 +936,28 @@ async function handleContextMenuCommand(command: string): Promise<void> {
       console.error('查看插件详情失败:', error)
     }
   } else if (command.startsWith('toggle-auto-detach:')) {
-    const pluginName = command.replace('toggle-auto-detach:', '')
+    const pluginPayload = parsePluginPayload(command.replace('toggle-auto-detach:', ''))
     try {
       let autoDetachPlugins: string[] = []
       try {
         const data = await window.ztools.dbGet('autoDetachPlugin')
         if (data && Array.isArray(data)) {
           autoDetachPlugins = data
+            .map((item: any) => (typeof item === 'string' ? item : (item?.pluginName ?? '')))
+            .filter(Boolean)
         }
       } catch (error) {
         console.debug('未找到 autoDetachPlugin 配置', error)
       }
 
-      const index = autoDetachPlugins.indexOf(pluginName)
-      if (index !== -1) {
-        autoDetachPlugins.splice(index, 1)
-      } else {
-        autoDetachPlugins.push(pluginName)
+      if (!pluginPayload) {
+        return
       }
 
+      const { pluginName } = pluginPayload
+      autoDetachPlugins = autoDetachPlugins.includes(pluginName)
+        ? autoDetachPlugins.filter((n) => n !== pluginName)
+        : [...autoDetachPlugins, pluginName]
       await window.ztools.dbPut('autoDetachPlugin', autoDetachPlugins)
       console.log('已更新 autoDetachPlugin 配置:', autoDetachPlugins)
     } catch (error: any) {
@@ -1019,40 +1065,6 @@ defineExpose({
   user-select: none;
   padding: 0 0 2px 0;
   border-radius: 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
-}
-
-.scrollable-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.scrollable-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollable-content::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 3px;
-  transition: background-color 0.2s;
-}
-
-.scrollable-content::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.3);
-}
-
-@media (prefers-color-scheme: dark) {
-  .scrollable-content {
-    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-  }
-
-  .scrollable-content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .scrollable-content::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.3);
-  }
 }
 
 .list-mode-results {
