@@ -1,14 +1,10 @@
 import { execFile } from 'child_process'
 import os from 'os'
 import path from 'path'
-import fs from 'fs'
 import { app, ipcMain, shell } from 'electron'
 import { getFileIconAsBase64 } from '../../core/iconProtocol'
 import { WindowManager } from '../../core/native/index.js'
-import pluginWindowManager from '../../core/pluginWindowManager'
 import type ClipboardManager from '../../managers/clipboardManager'
-import { requirePermission } from '../../utils/pluginPermissionCheck'
-import type { PluginPermission } from '../../types/pluginPermissions'
 
 const MAC_BROWSER_APP_MAP = {
   'com.apple.Safari': 'Safari',
@@ -42,41 +38,10 @@ export class PluginShellAPI {
     this.setupIPC()
   }
 
-  /**
-   * 从 IPC 事件获取插件路径
-   */
-  private getPluginPathFromEvent(event: any): string | null {
-    const webContentsId = event.sender?.id
-    if (!webContentsId) return null
-    return pluginWindowManager.getPluginPathByWebContentsId(webContentsId)
-  }
-
-  /**
-   * 检查并要求指定权限
-   */
-  private requireShellPermission(event: any, permission: PluginPermission): void {
-    const pluginPath = this.getPluginPathFromEvent(event)
-    if (!pluginPath) return
-
-    // 获取插件声明的权限
-    let declaredPermissions: PluginPermission[] = []
-    try {
-      const pluginJsonPath = path.join(pluginPath, 'plugin.json')
-      if (fs.existsSync(pluginJsonPath)) {
-        const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8'))
-        declaredPermissions = pluginJson.permissions ?? []
-      }
-    } catch {
-      // 读取失败时使用空权限
-    }
-    requirePermission(pluginPath, permission, declaredPermissions)
-  }
-
   private setupIPC(): void {
     // 使用系统默认程序打开 URL
     ipcMain.on('shell-open-external', async (event, url: string) => {
       try {
-        this.requireShellPermission(event, 'shell:open-path')
         await shell.openExternal(url)
         event.returnValue = { success: true }
       } catch (error: unknown) {
@@ -91,7 +56,6 @@ export class PluginShellAPI {
     // 在文件管理器中显示文件
     ipcMain.on('shell-show-item-in-folder', (event, fullPath: string) => {
       try {
-        this.requireShellPermission(event, 'shell:open-path')
         shell.showItemInFolder(fullPath)
       } catch (error: unknown) {
         console.error('[PluginShell] 在文件管理器中显示文件失败:', error)
@@ -102,7 +66,6 @@ export class PluginShellAPI {
     // 使用系统默认方式打开文件或文件夹
     ipcMain.on('shell-open-path', async (event, fullPath: string) => {
       try {
-        this.requireShellPermission(event, 'shell:open-path')
         const errorMessage = await shell.openPath(fullPath)
         event.returnValue = {
           success: !errorMessage,
@@ -146,7 +109,6 @@ export class PluginShellAPI {
     // 将文件移动到回收站（异步）
     ipcMain.handle('shell-trash-item', async (event, fullPath: string) => {
       try {
-        this.requireShellPermission(event, 'shell:trash-item')
         await shell.trashItem(fullPath)
         return { success: true }
       } catch (error: unknown) {

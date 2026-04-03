@@ -1,11 +1,6 @@
 import { ipcMain, clipboard, nativeImage } from 'electron'
 import os from 'os'
-import path from 'path'
-import fs from 'fs'
 import { readClipboardFiles, writeClipboardFiles } from '../../utils/clipboardFiles'
-import pluginWindowManager from '../../core/pluginWindowManager'
-import { requirePermission } from '../../utils/pluginPermissionCheck'
-import type { PluginPermission } from '../../types/pluginPermissions'
 
 /**
  * 剪贴板基础操作API - 插件专用
@@ -16,41 +11,10 @@ export class PluginClipboardAPI {
     this.setupIPC()
   }
 
-  /**
-   * 从 IPC 事件获取插件路径
-   */
-  private getPluginPathFromEvent(event: any): string | null {
-    const webContentsId = event.sender?.id
-    if (!webContentsId) return null
-    return pluginWindowManager.getPluginPathByWebContentsId(webContentsId)
-  }
-
-  /**
-   * 检查并要求指定权限
-   */
-  private requireClipboardPermission(event: any, permission: PluginPermission): void {
-    const pluginPath = this.getPluginPathFromEvent(event)
-    if (!pluginPath) return
-
-    // 获取插件声明的权限
-    let declaredPermissions: PluginPermission[] = []
-    try {
-      const pluginJsonPath = path.join(pluginPath, 'plugin.json')
-      if (fs.existsSync(pluginJsonPath)) {
-        const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8'))
-        declaredPermissions = pluginJson.permissions ?? []
-      }
-    } catch {
-      // 读取失败时使用空权限
-    }
-    requirePermission(pluginPath, permission, declaredPermissions)
-  }
-
   private setupIPC(): void {
     // 复制文本到剪贴板
     ipcMain.on('copy-text', (event, text: string) => {
       try {
-        this.requireClipboardPermission(event, 'clipboard:write')
         clipboard.writeText(text)
         event.returnValue = true
       } catch (error) {
@@ -63,7 +27,6 @@ export class PluginClipboardAPI {
     ipcMain.on('copy-image', (event, image: string | Buffer | Uint8Array) => {
       console.log('[PluginClipboard] 复制图片', image)
       try {
-        this.requireClipboardPermission(event, 'clipboard:write')
         let nativeImg
 
         if (typeof image === 'string') {
@@ -97,7 +60,6 @@ export class PluginClipboardAPI {
     // 复制文件到剪贴板
     ipcMain.on('copy-file', (event, filePath: string | string[]) => {
       try {
-        this.requireClipboardPermission(event, 'clipboard:write')
         const files = Array.isArray(filePath) ? filePath : [filePath]
 
         if (os.platform() === 'win32' || os.platform() === 'darwin') {
@@ -114,7 +76,6 @@ export class PluginClipboardAPI {
     // 获取剪贴板中的文件列表
     ipcMain.on('get-copyed-files', (event) => {
       try {
-        this.requireClipboardPermission(event, 'clipboard:read')
         const files = readClipboardFiles().map((file) => ({
           path: file.path,
           isDirectory: file.isDirectory,

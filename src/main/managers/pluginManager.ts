@@ -67,7 +67,6 @@ interface PluginViewInfo {
   isDevelopment?: boolean
   backgroundRunning?: boolean // plugin.json pluginSetting.backgroundRunning，后台不节流
   single?: boolean // plugin.json pluginSetting.single, true/默认 = 单例不可多开, false = 允许多开
-  permissions?: string[] // 插件声明的权限列表
 }
 
 interface PluginLastEnterState {
@@ -622,8 +621,7 @@ export class PluginManager {
         logo: logoUrl,
         isDevelopment,
         backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning,
-        single: pluginConfig.pluginSetting?.single,
-        permissions: pluginConfig.permissions || []
+        single: pluginConfig.pluginSetting?.single
       }
       this.pluginViews.push(pluginInfo)
       this.currentPluginPath = pluginPath
@@ -925,8 +923,7 @@ export class PluginManager {
         logo: logoUrl,
         isDevelopment,
         backgroundRunning: !!pluginConfig.pluginSetting?.backgroundRunning,
-        single: pluginConfig.pluginSetting?.single,
-        permissions: pluginConfig.permissions || []
+        single: pluginConfig.pluginSetting?.single
       }
       this.pluginViews.push(pluginInfo)
 
