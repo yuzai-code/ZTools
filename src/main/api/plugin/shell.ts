@@ -107,7 +107,7 @@ export class PluginShellAPI {
     })
 
     // 将文件移动到回收站（异步）
-    ipcMain.handle('shell-trash-item', async (event, fullPath: string) => {
+    ipcMain.handle('shell-trash-item', async (_event, fullPath: string) => {
       try {
         await shell.trashItem(fullPath)
         return { success: true }

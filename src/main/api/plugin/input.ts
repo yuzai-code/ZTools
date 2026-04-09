@@ -33,7 +33,7 @@ export class PluginInputAPI {
     ipcMain.handle(
       'send-input-event',
       (
-        event,
+        _event,
         inputEvent:
           | Electron.MouseInputEvent
           | Electron.MouseWheelInputEvent
